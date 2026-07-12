@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/logo.png" width="550" alt="KeywordTensor Logo">
+  <img src="assets/logo.png" width="300" alt="KeywordTensor Logo">
   <br>
   <p><strong>A Python library for training custom keyword spotting models and running real-time voice command detection.</strong></p>
 
@@ -10,7 +10,7 @@
 
 ---
 
-## 🚀 Why KeywordTensor? (Key Features)
+## ⚡ About KeywordTensor
 KeywordTensor is built for developers who want to integrate voice commands into their Python projects without requiring deep knowledge of audio processing. 
 
 - **Bring your own `.wav` files**: Just put your audio files into folders (e.g., `dataset/hello/`, `dataset/stop/`).
@@ -34,9 +34,20 @@ Don't have time to record your own dataset? You can use our ready-to-go models.
 
 ---
 
-## ⚡ Quick Start & API
+## 💻 Quick Start & API
 
-### 1. Training your model
+### 1. Installation (Choose your variant)
+The library is available in two variants on PyPI depending on your needs:
+
+- **`pip install keywordtensor`**
+  Installs the full training environment. Use this on your PC or Server to train your models.
+
+- **`pip install keywordtensor-edge`**
+  A lightweight runtime variant. It strips out heavy training dependencies (like `fastai`), providing only what is needed for real-time inference (`listen()`). Perfect for Raspberry Pi or IoT devices.
+
+---
+
+### 2. Training your model
 The `.train()` method takes your audio files and trains a neural network using PyTorch and FastAI under the hood. 
 
 ```python
@@ -68,7 +79,7 @@ You have total control over the pipeline. Available parameters in `.train()`:
 
 ---
 
-### 2. Live Inference & Custom Actions
+### 3. Live Inference & Custom Actions
 Once trained (or using a pre-trained model like `prawda_falsz`), you can run real-time inference using your microphone.
 
 ```python
@@ -127,14 +138,4 @@ This file dictates the rules for the inference engine:
 > 
 > **Bringing your own model?** No problem! If you trained an ONNX model entirely outside of KeywordTensor, simply drop it into your folder, create a matching `your_model_config.json` file next to it with the parameters above, and the `.listen()` method will load and run your external model.
 
----
 
-## 🚀 Deployment Options
-
-The library is available in two variants on PyPI:
-
-- **`pip install keywordtensor`**
-  Installs the full training environment. Use this on your PC or Server to train your models.
-
-- **`pip install keywordtensor-edge`**
-  A lightweight runtime variant. It strips out heavy training dependencies (like `fastai`), providing only what is needed for real-time inference (`listen()`). Perfect for Raspberry Pi or IoT devices.
