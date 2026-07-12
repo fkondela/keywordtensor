@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/logo.png" width="300" alt="KeywordTensor Logo">
+  <img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png" width="300" alt="KeywordTensor Logo">
   <br>
   <p><strong>A Python library for training custom keyword spotting models and running real-time voice command detection.</strong></p>
 
