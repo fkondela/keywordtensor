@@ -1,0 +1,50 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    # TE DWIE LINIJKI SĄ KLUCZOWE DLA TRUSTED PUBLISHING (OIDC)
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install build tools
+        run: python -m pip install --upgrade pip build
+
+      - name: Build keywordtensor (Main Training Package)
+        run: python -m build
+
+      - name: Publish keywordtensor to PyPI via Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Transform to keywordtensor-edge (Lightweight Inference Package)
+        run: |
+          # 1. Rename the package in pyproject.toml
+          sed -i 's/name = "keywordtensor"/name = "keywordtensor-edge"/g' pyproject.toml
+          # 2. Update the description
+          sed -i 's/description = "A Python library/description = "A lightweight inference library/g' pyproject.toml
+          # 3. Remove heavy training dependencies (fastai)
+          sed -i '/"fastai"/d' pyproject.toml
+          
+          # Clean previous build artifacts
+          rm -rf dist/ build/ *.egg-info
+
+      - name: Build keywordtensor-edge
+        run: python -m build
+
+      - name: Publish keywordtensor-edge to PyPI via Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@release/v1

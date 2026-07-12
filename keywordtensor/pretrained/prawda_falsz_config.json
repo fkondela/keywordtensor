@@ -1,0 +1,11 @@
+{
+    "labels": [
+        "falsz",
+        "other",
+        "prawda"
+    ],
+    "mean": -40.1587,
+    "std": 17.3580,
+    "duration": 3.0,
+    "sr": 16000
+}
