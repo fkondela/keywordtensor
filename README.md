@@ -98,8 +98,8 @@ def on_stop():
 model.listen(
     model_name="my_custom_model",
     actions={
-        "hello": {"funkcja": on_hello, "cooldown": 2.0},
-        "stop": {"funkcja": on_stop, "cooldown": 3.0}
+        "hello": {"function": on_hello, "cooldown": 2.0},
+        "stop": {"function": on_stop, "cooldown": 3.0}
     },
     min_confidence=0.6,
     n_averages=3
@@ -109,7 +109,7 @@ model.listen(
 **Listen parameters:**
 The `.listen()` method itself accepts the following runtime arguments:
 - `model_name` *(required)*: The name of the model to load. You can provide the path to your own trained model, or use the built-in `"prawda_falsz"` model which is highly robust to noise and pitched voices.
-- `actions` *(default: None)*: Optional dictionary mapping detected keywords to Python callbacks. You can pass just a function (defaults to 0.0s cooldown), or a dictionary for precise control: `{"funkcja": your_function, "cooldown": 2.0}`. Cooldowns are tracked individually per keyword!
+- `actions` *(default: None)*: Optional dictionary mapping detected keywords to Python callbacks. You can pass just a function (defaults to 0.0s cooldown), or a dictionary for precise control: `{"function": your_function, "cooldown": 2.0}`. Cooldowns are tracked individually per keyword!
 - `min_confidence` *(default: 0.6)*: The probability threshold (0.0 to 1.0) required to trigger the action.
 - `n_averages` *(default: 3)*: Temporal smoothing. Averages the last *N* predictions to prevent false positive clicks.
 

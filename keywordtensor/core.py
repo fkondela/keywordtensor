@@ -247,7 +247,7 @@ class Engine:
                                 func = action_val
                                 cooldown = 0.0
                             else:
-                                func = action_val.get("funkcja")
+                                func = action_val.get("function")
                                 cooldown = action_val.get("cooldown", 0.0)
                                 
                             last_time = last_trigger_times.get(predicted_class, 0.0)
