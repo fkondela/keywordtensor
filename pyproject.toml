@@ -4,8 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "keywordtensor"
-version = "1.0.0"
+version = "1.0.1"
 description = "A Python library for training custom keyword spotting models and running real-time voice command detection."
+readme = "README.md"
 license = {text = "MIT"}
 dependencies = [
     "numpy",
