@@ -1,4 +1,5 @@
 import json
+import threading
 import torch
 import torchaudio
 import torchaudio.transforms as T
@@ -207,7 +208,6 @@ class Engine:
         labels = cfg["labels"]
         sr = cfg["sr"]
         duration = cfg["duration"]
-        cooldown = cfg.get("cooldown", 2.0)
         
         wav_to_spec = WaveformToSpectrogram(sr=sr)
         normalize_spec = NormalizeSpec(mean=cfg["mean"], std=cfg["std"])
@@ -220,11 +220,8 @@ class Engine:
         prediction_history = deque(maxlen=n_averages)
         last_trigger_times = {}
 
-        def _run_inference(current_buffer, current_sr):
+        def _run_inference(current_buffer):
             wav_tensor = torch.tensor(current_buffer, dtype=torch.float32)
-            
-            if current_sr is not None and current_sr != sr:
-                wav_tensor = torchaudio.functional.resample(wav_tensor, orig_freq=current_sr, new_freq=sr)
             
             if len(wav_tensor) > buf_len:
                 wav_tensor = wav_tensor[-buf_len:]
@@ -255,7 +252,7 @@ class Engine:
                             current_cooldown = 0.0
                         else:
                             func = action_val.get("function")
-                            current_cooldown = action_val.get("cooldown", cooldown)
+                            current_cooldown = action_val.get("cooldown", 0.0)
                             
                         last_time = last_trigger_times.get(predicted_class, 0.0)
                         
@@ -264,19 +261,20 @@ class Engine:
                             prediction_history.clear()
                             last_trigger_times[predicted_class] = time.time()
 
-        current_sr = None
         webrtc_ctx = source
         
         if webrtc_ctx:
-            def poll_audio():
-                nonlocal current_sr
-                try: frames = webrtc_ctx.audio_receiver.get_frames(timeout=0.0)
-                except queue.Empty: frames = []
-                for frame in frames:
-                    clean_frame = frame.reformat(format='flt', layout='mono', rate=sr)
-                    if current_sr is None: current_sr = clean_frame.sample_rate
-                    audio_buffer.extend(clean_frame.to_ndarray()[0].tolist())
-                return current_sr
+            def webrtc_worker():
+                while webrtc_ctx.state.playing:
+                    try: frames = webrtc_ctx.audio_receiver.get_frames(timeout=0.0)
+                    except queue.Empty: frames = []
+                    for frame in frames:
+                        clean_frame = frame.reformat(format='flt', layout='mono', rate=sr)
+                        audio_buffer.extend(clean_frame.to_ndarray()[0].tolist())
+                    time.sleep(0.01)
+                    
+            webrtc_thread = threading.Thread(target=webrtc_worker, daemon=True)
+            webrtc_thread.start()
         else:
             if not HAS_SOUNDDEVICE:
                 raise RuntimeError("Live listening requires sounddevice. Install it via pip: pip install sounddevice")
@@ -284,19 +282,14 @@ class Engine:
                 audio_buffer.extend(indata[:, 0].tolist())
             stream = sd.InputStream(samplerate=sr, channels=1, callback=_audio_callback)
             stream.start()
-            current_sr = sr
-            def poll_audio():
-                return current_sr
 
         try:
             while True:
                 if webrtc_ctx and not webrtc_ctx.state.playing:
                     break
                     
-                active_sr = poll_audio()
-                
-                if active_sr and len(audio_buffer) >= int(active_sr * duration):
-                    _run_inference(list(audio_buffer), active_sr)
+                if len(audio_buffer) >= buf_len:
+                    _run_inference(list(audio_buffer))
                     
                 time.sleep(0.05)
         finally:
