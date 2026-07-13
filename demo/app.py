@@ -1,4 +1,4 @@
-import sys, os, time, json
+import sys, os, time, json, queue
 from collections import deque
 import torch
 import numpy as np
@@ -23,22 +23,14 @@ with open(config_path, "r", encoding="utf-8") as f:
 sr = cfg["sr"]
 buf_len = int(sr * cfg["duration"])
 
-if "audio_buffer" not in st.session_state:
-    st.session_state.audio_buffer = deque([0.0] * buf_len, maxlen=buf_len)
-
-def audio_frame_callback(frame):
-    new_frame = frame.reformat(format="flt", layout="mono", rate=sr)
-    st.session_state.audio_buffer.extend(new_frame.to_ndarray().flatten().tolist())
-    return frame
-
 rtc_config = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
 
 webrtc_ctx = webrtc_streamer(
     key="keyword-spotting",
     mode=WebRtcMode.SENDONLY,
-    audio_frame_callback=audio_frame_callback,
     rtc_configuration=rtc_config,
     media_stream_constraints={"video": False, "audio": True},
+    audio_receiver_size=256,
 )
 
 if webrtc_ctx.state.playing:
@@ -47,6 +39,9 @@ if webrtc_ctx.state.playing:
     sess = ort.InferenceSession(onnx_path)
     inp_name = sess.get_inputs()[0].name
     labels = cfg["labels"]
+    
+    if "audio_buffer" not in st.session_state:
+        st.session_state.audio_buffer = deque([0.0] * buf_len, maxlen=buf_len)
     
     prediction_history = deque(maxlen=3)
     last_trigger_times = {label: 0.0 for label in labels}
@@ -57,9 +52,18 @@ if webrtc_ctx.state.playing:
 
     while webrtc_ctx.state.playing:
         current_time = time.time()
-        current_buffer = list(st.session_state.audio_buffer)
         
-        wav_tensor = torch.tensor(current_buffer, dtype=torch.float32)
+        if webrtc_ctx.audio_receiver:
+            try:
+                audio_frames = webrtc_ctx.audio_receiver.get_frames(timeout=0.01)
+            except queue.Empty:
+                audio_frames = []
+            
+            for frame in audio_frames:
+                new_frame = frame.reformat(format="flt", layout="mono", rate=sr)
+                st.session_state.audio_buffer.extend(new_frame.to_ndarray().flatten().tolist())
+                
+        wav_tensor = torch.tensor(list(st.session_state.audio_buffer), dtype=torch.float32)
         spectrogram = normalize_spec.encodes(wav_to_spec.encodes(wav_tensor))
         onnx_data = spectrogram.unsqueeze(0).unsqueeze(0).numpy()
         
@@ -83,4 +87,4 @@ if webrtc_ctx.state.playing:
                     wykrycia.insert(0, f"✅ **{pred_label.upper()}** ({confidence:.0%})")
                     log_box.markdown("\n".join(wykrycia))
         
-        time.sleep(0.1)
+        time.sleep(0.05)
