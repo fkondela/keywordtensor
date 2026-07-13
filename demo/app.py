@@ -7,7 +7,7 @@ from streamlit_webrtc import webrtc_streamer, RTCConfiguration, WebRtcMode
 from keywordtensor.core import Engine
 
 st.set_page_config(page_title="KeywordTensor Web", layout="wide")
-st.title("KeywordTensor - Rozpoznawanie w Przeglądarce")
+st.title("KeywordTensor - prawda_falsz model")
 
 webrtc_ctx = webrtc_streamer(
     key="speech-to-text",
@@ -19,10 +19,10 @@ webrtc_ctx = webrtc_streamer(
 )
 
 def pokaz_prawde(): 
-    st.success("✅ WYKRYTO: PRAWDA")
+    st.success("✅ Predicted: PRAWDA")
 
 def pokaz_falsz():  
-    st.error("❌ WYKRYTO: FAŁSZ")
+    st.error("❌ Predicted: FAŁSZ")
 
 actions = {
     "prawda": {"function": pokaz_prawde, "cooldown": 3.0}, 
