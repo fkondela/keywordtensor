@@ -52,9 +52,7 @@ webrtc_ctx = webrtc_streamer(
     media_stream_constraints={"video": False, "audio": True},
 )
 
-start_analysis = st.button("Uruchom analize")
-
-if webrtc_ctx.state.playing and start_analysis:
+if webrtc_ctx.state.playing:
     wav_to_spec = WaveformToSpectrogram(sr=sr)
     normalize_spec = NormalizeSpec(mean=cfg["mean"], std=cfg["std"])
     sess = ort.InferenceSession(onnx_path)
@@ -76,7 +74,7 @@ if webrtc_ctx.state.playing and start_analysis:
         
         wav_tensor = torch.tensor(current_buffer, dtype=torch.float32)
         spectrogram = normalize_spec.encodes(wav_to_spec.encodes(wav_tensor))
-        onnx_data = spectrogram.unsqueeze(0).numpy()
+        onnx_data = spectrogram.unsqueeze(0).unsqueeze(0).numpy()
         
         logits = sess.run(None, {inp_name: onnx_data})[0][0]
         exp_res = np.exp(logits - np.max(logits))

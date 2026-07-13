@@ -27,7 +27,7 @@ KeywordTensor is built for developers who want to integrate voice commands into 
 Don't have time to record your own dataset? You can use our ready-to-go models.
 
 - **`prawda_falsz`**
-  [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://TUTAJ_WKLEISZ_LINK_DO_STREAMLIT)
+  [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://keywordtensor.streamlit.app)
   
   A highly robust model trained specifically to handle high-pitched children's voices and extremely noisy environments. This model was successfully deployed in a live public demonstration during the *"Noc Naukowców"* (Researchers' Night) event.
 - **More models coming soon!**
