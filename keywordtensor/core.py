@@ -264,33 +264,11 @@ class Engine:
                             last_trigger_times[predicted_class] = time.time()
 
         webrtc_ctx = source
-        audio_lock = threading.Lock()
         
         if webrtc_ctx:
             audio_buffer = []
-            active_sr_container = [None]
-            
-            def webrtc_worker():
-                while webrtc_ctx.state.playing:
-                    try: frames = webrtc_ctx.audio_receiver.get_frames(timeout=0.0)
-                    except queue.Empty: frames = []
-                    
-                    if frames:
-                        with audio_lock:
-                            for frame in frames:
-                                if active_sr_container[0] is None:
-                                    active_sr_container[0] = frame.sample_rate
-                                clean_frame = frame.reformat(format='flt', layout='mono')
-                                audio_buffer.extend(clean_frame.to_ndarray()[0].tolist())
-                                
-                            if active_sr_container[0]:
-                                max_len = int(active_sr_container[0] * duration)
-                                if len(audio_buffer) > max_len:
-                                    del audio_buffer[:-max_len]
-                    time.sleep(0.01)
-                    
-            webrtc_thread = threading.Thread(target=webrtc_worker, daemon=True)
-            webrtc_thread.start()
+            current_sr = None
+            time.sleep(duration)
         else:
             audio_buffer = deque([0.0] * buf_len, maxlen=buf_len)
             if not HAS_SOUNDDEVICE:
@@ -306,15 +284,24 @@ class Engine:
                     break
                     
                 if webrtc_ctx:
-                    with audio_lock:
-                        buffer_copy = list(audio_buffer)
-                        active_sr = active_sr_container[0] if active_sr_container else None
-                else:
-                    buffer_copy = list(audio_buffer)
-                    active_sr = sr
+                    try: frames = webrtc_ctx.audio_receiver.get_frames(timeout=0.01)
+                    except queue.Empty: frames = []
                     
-                if active_sr and len(buffer_copy) >= int(active_sr * duration):
-                    _run_inference(buffer_copy, active_sr)
+                    for frame in frames:
+                        if current_sr is None: current_sr = frame.sample_rate
+                        clean_frame = frame.reformat(format='flt', layout='mono')
+                        audio_buffer.extend(clean_frame.to_ndarray()[0].tolist())
+                        
+                    if current_sr:
+                        max_len = int(current_sr * duration)
+                        if len(audio_buffer) > max_len:
+                            del audio_buffer[:-max_len]
+                            
+                    if current_sr and len(audio_buffer) >= int(current_sr * duration):
+                        _run_inference(audio_buffer, current_sr)
+                else:
+                    if len(audio_buffer) >= buf_len:
+                        _run_inference(list(audio_buffer), sr)
                     
                 time.sleep(0.05)
         finally:
