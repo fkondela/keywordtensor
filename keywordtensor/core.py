@@ -8,7 +8,13 @@ import os
 import time
 from collections import deque
 import numpy as np
-import sounddevice as sd
+
+try:
+    import sounddevice as sd
+    HAS_SOUNDDEVICE = True
+except ImportError:
+    HAS_SOUNDDEVICE = False
+    sd = None
 #klasy niezbedne do transformacji danych audio i spektrogramów
 
 try:
@@ -176,6 +182,9 @@ class Engine:
 
 
     def listen(self, model_name, actions=None, min_confidence=0.6, n_averages=3, device=None):
+        if not HAS_SOUNDDEVICE:
+            raise RuntimeError("Live listening requires sounddevice. Install it via pip: pip install sounddevice")
+            
         if actions is None:
             actions = {}
             
