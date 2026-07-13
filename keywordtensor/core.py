@@ -216,12 +216,14 @@ class Engine:
         inp_name = sess.get_inputs()[0].name
         
         buf_len = int(sr * duration)
-        audio_buffer = deque([0.0] * buf_len, maxlen=buf_len)
         prediction_history = deque(maxlen=n_averages)
         last_trigger_times = {}
 
-        def _run_inference(current_buffer):
+        def _run_inference(current_buffer, active_sr):
             wav_tensor = torch.tensor(current_buffer, dtype=torch.float32)
+            
+            if active_sr != sr:
+                wav_tensor = torchaudio.functional.resample(wav_tensor, orig_freq=active_sr, new_freq=sr)
             
             if len(wav_tensor) > buf_len:
                 wav_tensor = wav_tensor[-buf_len:]
@@ -265,6 +267,9 @@ class Engine:
         audio_lock = threading.Lock()
         
         if webrtc_ctx:
+            audio_buffer = []
+            active_sr_container = [None]
+            
             def webrtc_worker():
                 while webrtc_ctx.state.playing:
                     try: frames = webrtc_ctx.audio_receiver.get_frames(timeout=0.0)
@@ -273,13 +278,21 @@ class Engine:
                     if frames:
                         with audio_lock:
                             for frame in frames:
-                                clean_frame = frame.reformat(format='flt', layout='mono', rate=sr)
+                                if active_sr_container[0] is None:
+                                    active_sr_container[0] = frame.sample_rate
+                                clean_frame = frame.reformat(format='flt', layout='mono')
                                 audio_buffer.extend(clean_frame.to_ndarray()[0].tolist())
+                                
+                            if active_sr_container[0]:
+                                max_len = int(active_sr_container[0] * duration)
+                                if len(audio_buffer) > max_len:
+                                    del audio_buffer[:-max_len]
                     time.sleep(0.01)
                     
             webrtc_thread = threading.Thread(target=webrtc_worker, daemon=True)
             webrtc_thread.start()
         else:
+            audio_buffer = deque([0.0] * buf_len, maxlen=buf_len)
             if not HAS_SOUNDDEVICE:
                 raise RuntimeError("Live listening requires sounddevice. Install it via pip: pip install sounddevice")
             def _audio_callback(indata, frames, time_info, status):
@@ -292,13 +305,16 @@ class Engine:
                 if webrtc_ctx and not webrtc_ctx.state.playing:
                     break
                     
-                if len(audio_buffer) >= buf_len:
-                    if webrtc_ctx:
-                        with audio_lock:
-                            buffer_copy = list(audio_buffer)
-                    else:
+                if webrtc_ctx:
+                    with audio_lock:
                         buffer_copy = list(audio_buffer)
-                    _run_inference(buffer_copy)
+                        active_sr = active_sr_container[0] if active_sr_container else None
+                else:
+                    buffer_copy = list(audio_buffer)
+                    active_sr = sr
+                    
+                if active_sr and len(buffer_copy) >= int(active_sr * duration):
+                    _run_inference(buffer_copy, active_sr)
                     
                 time.sleep(0.05)
         finally:
