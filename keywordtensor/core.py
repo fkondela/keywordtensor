@@ -183,7 +183,7 @@ class Engine:
             )
 
 
-    def listen(self, model_name, actions=None, min_confidence=0.6, n_averages=3, device=None):
+    def listen(self, model_name, actions=None, min_confidence=0.6, n_averages=3, device=None, source=None):
         
         if actions is None:
             actions = {}
@@ -217,20 +217,7 @@ class Engine:
         
         buf_len = int(sr * duration)
         
-        webrtc_ctx = None
-        caller_frame = inspect.currentframe().f_back
-        while caller_frame:
-            for val in caller_frame.f_locals.values():
-                if hasattr(val, 'audio_receiver') and hasattr(val, 'state'):
-                    webrtc_ctx = val
-                    break
-            if not webrtc_ctx:
-                for val in caller_frame.f_globals.values():
-                    if hasattr(val, 'audio_receiver') and hasattr(val, 'state'):
-                        webrtc_ctx = val
-                        break
-            if webrtc_ctx: break
-            caller_frame = caller_frame.f_back
+        webrtc_ctx = source
 
         prediction_history = deque(maxlen=n_averages)
         last_trigger_times = {}
