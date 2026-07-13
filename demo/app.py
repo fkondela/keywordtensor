@@ -4,6 +4,7 @@ import torch
 import numpy as np
 import onnxruntime as ort
 import streamlit as st
+import av
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -42,6 +43,8 @@ if webrtc_ctx.state.playing:
     
     if "audio_buffer" not in st.session_state:
         st.session_state.audio_buffer = deque([0.0] * buf_len, maxlen=buf_len)
+        
+    resampler = av.AudioResampler(format="flt", layout="mono", rate=sr)
     
     prediction_history = deque(maxlen=3)
     last_trigger_times = {label: 0.0 for label in labels}
@@ -60,8 +63,8 @@ if webrtc_ctx.state.playing:
                 audio_frames = []
             
             for frame in audio_frames:
-                new_frame = frame.reformat(format="flt", layout="mono", rate=sr)
-                st.session_state.audio_buffer.extend(new_frame.to_ndarray().flatten().tolist())
+                for new_frame in resampler.resample(frame):
+                    st.session_state.audio_buffer.extend(new_frame.to_ndarray().flatten().tolist())
                 
         wav_tensor = torch.tensor(list(st.session_state.audio_buffer), dtype=torch.float32)
         spectrogram = normalize_spec.encodes(wav_to_spec.encodes(wav_tensor))
