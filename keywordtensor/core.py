@@ -221,9 +221,14 @@ class Engine:
         caller_frame = inspect.currentframe().f_back
         while caller_frame:
             for val in caller_frame.f_locals.values():
-                if hasattr(val, 'audio_receiver') and hasattr(val, 'state'):
+                if type(val).__name__ == 'WebRtcStreamerContext':
                     webrtc_ctx = val
                     break
+            if not webrtc_ctx:
+                for val in caller_frame.f_globals.values():
+                    if type(val).__name__ == 'WebRtcStreamerContext':
+                        webrtc_ctx = val
+                        break
             if webrtc_ctx: break
             caller_frame = caller_frame.f_back
 
