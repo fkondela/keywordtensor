@@ -175,7 +175,7 @@ class Engine:
             )
 
 
-    def listen(self, model_name, actions=None, min_confidence=0.6, n_averages=3):
+    def listen(self, model_name, actions=None, min_confidence=0.6, n_averages=3, device=None):
         if actions is None:
             actions = {}
             
@@ -215,7 +215,7 @@ class Engine:
 
         last_trigger_times = {}
 
-        with sd.InputStream(samplerate=sr, channels=1, blocksize=int(sr * 0.1), callback=_audio_callback):
+        with sd.InputStream(samplerate=sr, channels=1, blocksize=int(sr * 0.1), callback=_audio_callback, device=device):
             time.sleep(duration)
             while True:
 

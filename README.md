@@ -102,7 +102,8 @@ model.listen(
         "stop": {"function": on_stop, "cooldown": 3.0}
     },
     min_confidence=0.6,
-    n_averages=3
+    n_averages=3,
+    device=None # Optional: specify audio input device ID
 )
 ```
 
@@ -112,6 +113,7 @@ The `.listen()` method itself accepts the following runtime arguments:
 - `actions` *(default: None)*: Optional dictionary mapping detected keywords to Python callbacks. You can pass just a function (defaults to 0.0s cooldown), or a dictionary for precise control: `{"function": your_function, "cooldown": 2.0}`. Cooldowns are tracked individually per keyword!
 - `min_confidence` *(default: 0.6)*: The probability threshold (0.0 to 1.0) required to trigger the action.
 - `n_averages` *(default: 3)*: Temporal smoothing. Averages the last *N* predictions to prevent false positive clicks.
+- `device` *(default: None)*: Specific ID or name of the microphone to use (e.g., from `sounddevice.query_devices()`). If `None`, the system default is used.
 
 **Config file parameters:**
 The rest of the underlying parameters are loaded automatically from the `<model_name>_config.json` file! 
@@ -137,5 +139,3 @@ This file dictates the rules for the inference engine:
 > Want to adjust the microphone sample rate or buffer duration without retraining? Just open the JSON file and edit it! 
 > 
 > **Bringing your own model?** No problem! If you trained an ONNX model entirely outside of KeywordTensor, simply drop it into your folder, create a matching `your_model_config.json` file next to it with the parameters above, and the `.listen()` method will load and run your external model.
-
-
