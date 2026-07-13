@@ -183,7 +183,7 @@ class Engine:
             )
 
 
-    def listen(self, model_name, actions=None, min_confidence=0.6, n_averages=3, device=None):
+    def listen(self, model_name, actions=None, min_confidence=0.6, n_averages=3, device=None, source=None):
         
         if actions is None:
             actions = {}
@@ -264,13 +264,9 @@ class Engine:
                             prediction_history.clear()
                             last_trigger_times[predicted_class] = time.time()
 
-        webrtc_ctx = None
-        if "streamlit" in sys.modules:
-            import streamlit as st
-            if hasattr(st, "session_state") and "webrtc_ctx" in st.session_state:
-                webrtc_ctx = st.session_state["webrtc_ctx"]
-
         current_sr = None
+        webrtc_ctx = source
+        
         if webrtc_ctx:
             def poll_audio():
                 nonlocal current_sr
