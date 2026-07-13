@@ -1,5 +1,5 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer, RTCConfiguration
+from streamlit_webrtc import webrtc_streamer, RTCConfiguration, WebRtcMode
 from keywordtensor.core import Engine
 
 st.set_page_config(page_title="KeywordTensor Web", layout="wide")
@@ -7,6 +7,7 @@ st.title("KeywordTensor - Rozpoznawanie w Przeglądarce")
 
 webrtc_ctx = webrtc_streamer(
     key="speech-to-text",
+    mode=WebRtcMode.SENDONLY,
     rtc_configuration=RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}),
     media_stream_constraints={"video": False, "audio": True},
     async_processing=True,
