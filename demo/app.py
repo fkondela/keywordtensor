@@ -30,5 +30,6 @@ actions = {
 }
 
 if webrtc_ctx.state.playing:
+    st.session_state["webrtc_ctx"] = webrtc_ctx
     engine = Engine()
-    engine.listen("prawda_falsz", actions=actions, source=webrtc_ctx)
+    engine.listen("prawda_falsz", actions=actions)

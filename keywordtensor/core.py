@@ -183,7 +183,7 @@ class Engine:
             )
 
 
-    def listen(self, model_name, actions=None, min_confidence=0.6, n_averages=3, device=None, source=None):
+    def listen(self, model_name, actions=None, min_confidence=0.6, n_averages=3, device=None):
         
         if actions is None:
             actions = {}
@@ -264,18 +264,22 @@ class Engine:
                             prediction_history.clear()
                             last_trigger_times[predicted_class] = time.time()
 
+        webrtc_ctx = None
+        if "streamlit" in sys.modules:
+            import streamlit as st
+            if hasattr(st, "session_state") and "webrtc_ctx" in st.session_state:
+                webrtc_ctx = st.session_state["webrtc_ctx"]
+
         current_sr = None
-        if source:
-            webrtc_ctx = source
+        if webrtc_ctx:
             def poll_audio():
                 nonlocal current_sr
                 try: frames = webrtc_ctx.audio_receiver.get_frames(timeout=0.0)
                 except queue.Empty: frames = []
                 for frame in frames:
-                    if current_sr is None: current_sr = frame.sample_rate
-                    sound = frame.to_ndarray()
-                    sound = sound[0, :] if sound.shape[0] < sound.shape[1] else sound[:, 0]
-                    audio_buffer.extend((sound.astype(np.float32) / 32768.0).tolist())
+                    clean_frame = frame.reformat(format='flt', layout='mono', rate=sr)
+                    if current_sr is None: current_sr = clean_frame.sample_rate
+                    audio_buffer.extend(clean_frame.to_ndarray()[0].tolist())
                 return current_sr
         else:
             if not HAS_SOUNDDEVICE:
@@ -290,7 +294,7 @@ class Engine:
 
         try:
             while True:
-                if source and not webrtc_ctx.state.playing:
+                if webrtc_ctx and not webrtc_ctx.state.playing:
                     break
                     
                 active_sr = poll_audio()
@@ -298,8 +302,8 @@ class Engine:
                 if active_sr and len(audio_buffer) >= int(active_sr * duration):
                     _run_inference(list(audio_buffer), active_sr)
                     
-                time.sleep(0.1)
+                time.sleep(0.05)
         finally:
-            if not source:
+            if not webrtc_ctx:
                 stream.stop()
                 stream.close()
