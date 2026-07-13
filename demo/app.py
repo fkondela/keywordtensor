@@ -25,8 +25,8 @@ def pokaz_falsz():
     st.error("❌ WYKRYTO: FAŁSZ")
 
 actions = {
-    "prawda": pokaz_prawde, 
-    "falsz": pokaz_falsz
+    "prawda": {"function": pokaz_prawde, "cooldown": 3.0}, 
+    "falsz": {"function": pokaz_falsz, "cooldown": 3.0}
 }
 
 if webrtc_ctx.state.playing:
