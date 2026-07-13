@@ -8,6 +8,8 @@ import os
 import time
 from collections import deque
 import numpy as np
+import inspect
+import queue
 
 try:
     import sounddevice as sd
@@ -182,9 +184,7 @@ class Engine:
 
 
     def listen(self, model_name, actions=None, min_confidence=0.6, n_averages=3, device=None):
-        if not HAS_SOUNDDEVICE:
-            raise RuntimeError("Live listening requires sounddevice. Install it via pip: pip install sounddevice")
-            
+        
         if actions is None:
             actions = {}
             
@@ -207,6 +207,7 @@ class Engine:
         labels = cfg["labels"]
         sr = cfg["sr"]
         duration = cfg["duration"]
+        cooldown = cfg.get("cooldown", 2.0)
         
         wav_to_spec = WaveformToSpectrogram(sr=sr)
         normalize_spec = NormalizeSpec(mean=cfg["mean"], std=cfg["std"])
@@ -215,55 +216,99 @@ class Engine:
         inp_name = sess.get_inputs()[0].name
         
         buf_len = int(sr * duration)
-        audio_buffer = deque([0.0] * buf_len, maxlen=buf_len)
-        prediction_history = deque(maxlen=n_averages)
         
+        webrtc_ctx = None
+        caller_frame = inspect.currentframe().f_back
+        while caller_frame:
+            for val in caller_frame.f_locals.values():
+                if hasattr(val, 'audio_receiver') and hasattr(val, 'state'):
+                    webrtc_ctx = val
+                    break
+            if webrtc_ctx: break
+            caller_frame = caller_frame.f_back
 
-        def _audio_callback(indata, frames, time_info, status): 
-            audio_buffer.extend(indata[:, 0])
-
+        prediction_history = deque(maxlen=n_averages)
         last_trigger_times = {}
 
-        with sd.InputStream(samplerate=sr, channels=1, blocksize=int(sr * 0.1), callback=_audio_callback, device=device):
+        def _run_inference(current_buffer, current_sr):
+            wav_tensor = torch.tensor(current_buffer, dtype=torch.float32)
+            
+            if current_sr is not None and current_sr != sr:
+                wav_tensor = torchaudio.functional.resample(wav_tensor, orig_freq=current_sr, new_freq=sr)
+            
+            if len(wav_tensor) > buf_len:
+                wav_tensor = wav_tensor[-buf_len:]
+            elif len(wav_tensor) < buf_len:
+                return
+                
+            spectrogram = wav_to_spec.encodes(wav_tensor)
+            spectrogram = normalize_spec.encodes(spectrogram)
+            onnx_data = spectrogram.unsqueeze(0).unsqueeze(0).numpy()
+            
+            logits = sess.run(None, {inp_name: onnx_data})[0][0]
+            exp_res = np.exp(logits - np.max(logits))
+            probs = exp_res / exp_res.sum()
+            prediction_history.append(probs)
+            
+            if len(prediction_history) == n_averages:
+                mean_probs = np.mean(prediction_history, axis=0)
+                idx = np.argmax(mean_probs)
+                confidence = mean_probs[idx]
+                predicted_class = labels[idx]
+
+                if confidence > min_confidence:
+                    if predicted_class in actions:
+                        action_val = actions[predicted_class]
+                        
+                        if callable(action_val):
+                            func = action_val
+                            current_cooldown = 0.0
+                        else:
+                            func = action_val.get("function")
+                            current_cooldown = action_val.get("cooldown", cooldown)
+                            
+                        last_time = last_trigger_times.get(predicted_class, 0.0)
+                        
+                        if func and (time.time() - last_time >= current_cooldown):
+                            func()
+                            prediction_history.clear()
+                            last_trigger_times[predicted_class] = time.time()
+
+        if webrtc_ctx:
+            audio_buffer = []
+            current_sr = None
             time.sleep(duration)
-            while True:
-
-                wav_tensor = torch.tensor(list(audio_buffer), dtype=torch.float32)
-
-                spectrogram = wav_to_spec.encodes(wav_tensor)
-                spectrogram = normalize_spec.encodes(spectrogram)
+            
+            while webrtc_ctx.state.playing:
+                try: frames = webrtc_ctx.audio_receiver.get_frames(timeout=0.01)
+                except queue.Empty: frames = []
                 
-                onnx_data = spectrogram.unsqueeze(0).unsqueeze(0).numpy()
+                for frame in frames:
+                    if current_sr is None: current_sr = frame.sample_rate
+                    sound = frame.to_ndarray()
+                    sound = sound[0, :] if sound.shape[0] < sound.shape[1] else sound[:, 0]
+                    audio_buffer.extend((sound.astype(np.float32) / 32768.0).tolist())
+                    
+                if current_sr:
+                    max_len = int(current_sr * duration)
+                    if len(audio_buffer) > max_len:
+                        audio_buffer = audio_buffer[-max_len:]
                 
-                logits = sess.run(None, {inp_name: onnx_data})[0][0]
-                
-                exp_res = np.exp(logits - np.max(logits))
-                probs = exp_res / exp_res.sum()
-                
-                prediction_history.append(probs)
-                
-                if len(prediction_history) == n_averages:
-                    mean_probs = np.mean(prediction_history, axis=0)
-                    idx = np.argmax(mean_probs)
-                    confidence = mean_probs[idx]
-                    predicted_class = labels[idx]
-
-                    if confidence > min_confidence:
-                        if predicted_class in actions:
-                            action_val = actions[predicted_class]
-                            
-                            if callable(action_val):
-                                func = action_val
-                                cooldown = 0.0
-                            else:
-                                func = action_val.get("function")
-                                cooldown = action_val.get("cooldown", 0.0)
-                                
-                            last_time = last_trigger_times.get(predicted_class, 0.0)
-                            
-                            if func and (time.time() - last_time >= cooldown):
-                                func()
-                                prediction_history.clear()
-                                last_trigger_times[predicted_class] = time.time()
-                
+                if current_sr and len(audio_buffer) >= int(current_sr * duration):
+                    _run_inference(audio_buffer, current_sr)
                 time.sleep(0.05)
+
+        else:
+            if not HAS_SOUNDDEVICE:
+                raise RuntimeError("Live listening requires sounddevice. Install it via pip: pip install sounddevice")
+                
+            audio_buffer = deque([0.0] * buf_len, maxlen=buf_len)
+            
+            def _audio_callback(indata, frames, time_info, status):
+                audio_buffer.extend(indata[:, 0])
+
+            with sd.InputStream(samplerate=sr, channels=1, blocksize=int(sr * 0.1), callback=_audio_callback, device=device):
+                time.sleep(duration)
+                while True:
+                    _run_inference(list(audio_buffer), sr)
+                    time.sleep(0.05)
