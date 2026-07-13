@@ -269,13 +269,18 @@ class Engine:
         
         if webrtc_ctx:
             def poll_audio():
-                nonlocal current_sr
+                nonlocal current_sr, audio_buffer
                 try: frames = webrtc_ctx.audio_receiver.get_frames(timeout=0.0)
                 except queue.Empty: frames = []
                 for frame in frames:
-                    clean_frame = frame.reformat(format='flt', layout='mono', rate=sr)
-                    if current_sr is None: current_sr = clean_frame.sample_rate
-                    audio_buffer.extend(clean_frame.to_ndarray()[0].tolist())
+                    if current_sr is None: 
+                        current_sr = frame.sample_rate
+                        max_len = int(current_sr * duration)
+                        audio_buffer = deque([0.0] * max_len, maxlen=max_len)
+                        
+                    sound = frame.to_ndarray()
+                    sound = sound[0, :] if sound.shape[0] < sound.shape[1] else sound[:, 0]
+                    audio_buffer.extend((sound.astype(np.float32) / 32768.0).tolist())
                 return current_sr
         else:
             if not HAS_SOUNDDEVICE:
@@ -296,7 +301,8 @@ class Engine:
                 active_sr = poll_audio()
                 
                 if active_sr and len(audio_buffer) >= int(active_sr * duration):
-                    _run_inference(list(audio_buffer), active_sr)
+                    current_buffer = list(audio_buffer)[-int(active_sr * duration):]
+                    _run_inference(current_buffer, active_sr)
                     
                 time.sleep(0.05)
         finally:
