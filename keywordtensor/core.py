@@ -216,9 +216,7 @@ class Engine:
         inp_name = sess.get_inputs()[0].name
         
         buf_len = int(sr * duration)
-        
-        webrtc_ctx = source
-
+        audio_buffer = deque([0.0] * buf_len, maxlen=buf_len)
         prediction_history = deque(maxlen=n_averages)
         last_trigger_times = {}
 
@@ -266,40 +264,42 @@ class Engine:
                             prediction_history.clear()
                             last_trigger_times[predicted_class] = time.time()
 
-        if webrtc_ctx:
-            audio_buffer = []
-            current_sr = None
-            
-            while webrtc_ctx.state.playing:
-                try: frames = webrtc_ctx.audio_receiver.get_frames(timeout=0.01)
+        current_sr = None
+        if source:
+            webrtc_ctx = source
+            def poll_audio():
+                nonlocal current_sr
+                try: frames = webrtc_ctx.audio_receiver.get_frames(timeout=0.0)
                 except queue.Empty: frames = []
-                
                 for frame in frames:
                     if current_sr is None: current_sr = frame.sample_rate
                     sound = frame.to_ndarray()
                     sound = sound[0, :] if sound.shape[0] < sound.shape[1] else sound[:, 0]
                     audio_buffer.extend((sound.astype(np.float32) / 32768.0).tolist())
-                    
-                if current_sr:
-                    max_len = int(current_sr * duration)
-                    if len(audio_buffer) > max_len:
-                        audio_buffer = audio_buffer[-max_len:]
-                
-                if current_sr and len(audio_buffer) >= int(current_sr * duration):
-                    _run_inference(audio_buffer, current_sr)
-                time.sleep(0.05)
-
+                return current_sr
         else:
             if not HAS_SOUNDDEVICE:
                 raise RuntimeError("Live listening requires sounddevice. Install it via pip: pip install sounddevice")
-                
-            audio_buffer = deque([0.0] * buf_len, maxlen=buf_len)
-            
             def _audio_callback(indata, frames, time_info, status):
-                audio_buffer.extend(indata[:, 0])
+                audio_buffer.extend(indata[:, 0].tolist())
+            stream = sd.InputStream(samplerate=sr, channels=1, callback=_audio_callback)
+            stream.start()
+            current_sr = sr
+            def poll_audio():
+                return current_sr
 
-            with sd.InputStream(samplerate=sr, channels=1, blocksize=int(sr * 0.1), callback=_audio_callback, device=device):
-                time.sleep(duration)
-                while True:
-                    _run_inference(list(audio_buffer), sr)
-                    time.sleep(0.05)
+        try:
+            while True:
+                if source and not webrtc_ctx.state.playing:
+                    break
+                    
+                active_sr = poll_audio()
+                
+                if active_sr and len(audio_buffer) >= int(active_sr * duration):
+                    _run_inference(list(audio_buffer), active_sr)
+                    
+                time.sleep(0.1)
+        finally:
+            if not source:
+                stream.stop()
+                stream.close()
