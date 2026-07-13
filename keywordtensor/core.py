@@ -269,7 +269,6 @@ class Engine:
         if webrtc_ctx:
             audio_buffer = []
             current_sr = None
-            time.sleep(duration)
             
             while webrtc_ctx.state.playing:
                 try: frames = webrtc_ctx.audio_receiver.get_frames(timeout=0.01)

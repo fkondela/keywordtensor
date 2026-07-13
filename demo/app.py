@@ -12,6 +12,7 @@ st.title("KeywordTensor - Rozpoznawanie w Przeglądarce")
 webrtc_ctx = webrtc_streamer(
     key="speech-to-text",
     mode=WebRtcMode.SENDONLY,
+    audio_receiver_size=256,
     rtc_configuration=RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}),
     media_stream_constraints={"video": False, "audio": True},
     async_processing=True,
