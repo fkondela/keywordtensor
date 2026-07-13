@@ -262,15 +262,19 @@ class Engine:
                             last_trigger_times[predicted_class] = time.time()
 
         webrtc_ctx = source
+        audio_lock = threading.Lock()
         
         if webrtc_ctx:
             def webrtc_worker():
                 while webrtc_ctx.state.playing:
                     try: frames = webrtc_ctx.audio_receiver.get_frames(timeout=0.0)
                     except queue.Empty: frames = []
-                    for frame in frames:
-                        clean_frame = frame.reformat(format='flt', layout='mono', rate=sr)
-                        audio_buffer.extend(clean_frame.to_ndarray()[0].tolist())
+                    
+                    if frames:
+                        with audio_lock:
+                            for frame in frames:
+                                clean_frame = frame.reformat(format='flt', layout='mono', rate=sr)
+                                audio_buffer.extend(clean_frame.to_ndarray()[0].tolist())
                     time.sleep(0.01)
                     
             webrtc_thread = threading.Thread(target=webrtc_worker, daemon=True)
@@ -289,7 +293,12 @@ class Engine:
                     break
                     
                 if len(audio_buffer) >= buf_len:
-                    _run_inference(list(audio_buffer))
+                    if webrtc_ctx:
+                        with audio_lock:
+                            buffer_copy = list(audio_buffer)
+                    else:
+                        buffer_copy = list(audio_buffer)
+                    _run_inference(buffer_copy)
                     
                 time.sleep(0.05)
         finally:
