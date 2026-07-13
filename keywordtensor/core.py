@@ -17,7 +17,13 @@ try:
 except ImportError:
     HAS_SOUNDDEVICE = False
     sd = None
-#klasy niezbedne do transformacji danych audio i spektrogramów
+
+try:
+    import av
+    HAS_AV = True
+except ImportError:
+    HAS_AV = False
+    av = None
 
 try:
     from fastai.vision.all import *
@@ -268,19 +274,23 @@ class Engine:
         webrtc_ctx = source
         
         if webrtc_ctx:
+            if not HAS_AV:
+                raise RuntimeError("Live listening via WebRTC requires PyAV. Install it via pip: pip install av")
+            resampler = av.AudioResampler(format='flt', layout='mono', rate=sr)
+            
             def poll_audio():
                 nonlocal current_sr, audio_buffer
                 try: frames = webrtc_ctx.audio_receiver.get_frames(timeout=0.0)
                 except queue.Empty: frames = []
                 for frame in frames:
                     if current_sr is None: 
-                        current_sr = frame.sample_rate
+                        current_sr = sr # Resampler gives us EXACTLY sr (16000)
                         max_len = int(current_sr * duration)
                         audio_buffer = deque([0.0] * max_len, maxlen=max_len)
                         
-                    sound = frame.to_ndarray()
-                    sound = sound[0, :] if sound.shape[0] < sound.shape[1] else sound[:, 0]
-                    audio_buffer.extend((sound.astype(np.float32) / 32768.0).tolist())
+                    clean_frames = resampler.resample(frame)
+                    for clean_frame in clean_frames:
+                        audio_buffer.extend(clean_frame.to_ndarray()[0].tolist())
                 return current_sr
         else:
             if not HAS_SOUNDDEVICE:
