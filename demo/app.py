@@ -3,11 +3,9 @@ from collections import deque
 import torch
 import numpy as np
 import onnxruntime as ort
-import torchaudio
 import streamlit as st
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 
-# Dodanie katalogu glownego do sys.path by wczytac lokalny keywordtensor
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import keywordtensor
 from keywordtensor.core import WaveformToSpectrogram, NormalizeSpec
@@ -16,33 +14,24 @@ st.set_page_config(page_title="KeywordTensor Live", layout="wide")
 st.title("🎙️ KeywordTensor: Live WebRTC")
 
 lib_path = os.path.dirname(keywordtensor.__file__)
-model_name = "prawda_falsz"
-config_path = os.path.join(lib_path, "pretrained", f"{model_name}_config.json")
-onnx_path = os.path.join(lib_path, "pretrained", f"{model_name}.onnx")
+config_path = os.path.join(lib_path, "pretrained", "prawda_falsz_config.json")
+onnx_path = os.path.join(lib_path, "pretrained", "prawda_falsz.onnx")
 
 with open(config_path, "r", encoding="utf-8") as f:
     cfg = json.load(f)
 
 sr = cfg["sr"]
-duration = cfg["duration"]
-buf_len = int(sr * duration)
+buf_len = int(sr * cfg["duration"])
 
 if "audio_buffer" not in st.session_state:
     st.session_state.audio_buffer = deque([0.0] * buf_len, maxlen=buf_len)
 
-# Watek odbierajacy dzwiek z przegladarki 
 def audio_frame_callback(frame):
-    sound = frame.to_ndarray()
-    if sound.ndim > 1 and sound.shape[1] > 1:
-        mono = sound.mean(axis=1)
-    else:
-        mono = sound.flatten()
-        
-    st.session_state.audio_buffer.extend(mono.tolist())
+    new_frame = frame.reformat(format="flt", layout="mono", rate=sr)
+    st.session_state.audio_buffer.extend(new_frame.to_ndarray().flatten().tolist())
     return frame
 
 rtc_config = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
-st.write("Wlacz mikrofon i uruchom analize ponizej.")
 
 webrtc_ctx = webrtc_streamer(
     key="keyword-spotting",
@@ -59,15 +48,13 @@ if webrtc_ctx.state.playing:
     inp_name = sess.get_inputs()[0].name
     labels = cfg["labels"]
     
-    n_averages = 3
-    prediction_history = deque(maxlen=n_averages)
+    prediction_history = deque(maxlen=3)
     last_trigger_times = {label: 0.0 for label in labels}
     
     status_box = st.empty()
     log_box = st.empty()
     wykrycia = []
 
-    # Glowna petla sprawdzajaca zapelniony bufor
     while webrtc_ctx.state.playing:
         current_time = time.time()
         current_buffer = list(st.session_state.audio_buffer)
@@ -82,7 +69,7 @@ if webrtc_ctx.state.playing:
         
         prediction_history.append(probs)
         
-        if len(prediction_history) == n_averages:
+        if len(prediction_history) == 3:
             avg_probs = np.mean(prediction_history, axis=0)
             pred_idx = np.argmax(avg_probs)
             pred_label = labels[pred_idx]
