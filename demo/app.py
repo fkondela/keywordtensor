@@ -1,10 +1,10 @@
 import sys, os, time, json, queue
 from collections import deque
 import torch
+import torchaudio
 import numpy as np
 import onnxruntime as ort
 import streamlit as st
-import av
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -30,7 +30,14 @@ webrtc_ctx = webrtc_streamer(
     key="keyword-spotting",
     mode=WebRtcMode.SENDONLY,
     rtc_configuration=rtc_config,
-    media_stream_constraints={"video": False, "audio": True},
+    media_stream_constraints={
+        "video": False, 
+        "audio": {
+            "autoGainControl": False,
+            "echoCancellation": False,
+            "noiseSuppression": False
+        }
+    },
     audio_receiver_size=256,
 )
 
@@ -43,8 +50,6 @@ if webrtc_ctx.state.playing:
     
     if "audio_buffer" not in st.session_state:
         st.session_state.audio_buffer = deque([0.0] * buf_len, maxlen=buf_len)
-        
-    resampler = av.AudioResampler(format="flt", layout="mono", rate=sr)
     
     prediction_history = deque(maxlen=3)
     last_trigger_times = {label: 0.0 for label in labels}
@@ -63,11 +68,22 @@ if webrtc_ctx.state.playing:
                 audio_frames = []
             
             for frame in audio_frames:
-                for new_frame in resampler.resample(frame):
-                    st.session_state.audio_buffer.extend(new_frame.to_ndarray().flatten().tolist())
+                sound = frame.to_ndarray()
+                
+                if sound.ndim == 2:
+                    sound = sound[0, :] if sound.shape[0] < sound.shape[1] else sound[:, 0]
+                
+                sound_float = sound.astype(np.float32) / 32768.0
+                wav_chunk = torch.tensor(sound_float, dtype=torch.float32)
+                
+                if frame.sample_rate != sr:
+                    wav_chunk = torchaudio.functional.resample(wav_chunk, orig_freq=frame.sample_rate, new_freq=sr)
+                    
+                st.session_state.audio_buffer.extend(wav_chunk.tolist())
                 
         wav_tensor = torch.tensor(list(st.session_state.audio_buffer), dtype=torch.float32)
-        spectrogram = normalize_spec.encodes(wav_to_spec.encodes(wav_tensor))
+        spectrogram = wav_to_spec.encodes(wav_tensor)
+        spectrogram = normalize_spec.encodes(spectrogram)
         onnx_data = spectrogram.unsqueeze(0).unsqueeze(0).numpy()
         
         logits = sess.run(None, {inp_name: onnx_data})[0][0]
