@@ -22,7 +22,8 @@ with open(config_path, "r", encoding="utf-8") as f:
     cfg = json.load(f)
 
 sr = cfg["sr"]
-buf_len = int(sr * cfg["duration"])
+duration = cfg["duration"]
+buf_len = int(sr * duration)
 
 rtc_config = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
 
@@ -58,6 +59,7 @@ if webrtc_ctx.state.playing:
     log_box = st.empty()
     wykrycia = []
 
+    time.sleep(duration)
     while webrtc_ctx.state.playing:
         current_time = time.time()
         
@@ -103,6 +105,7 @@ if webrtc_ctx.state.playing:
             if confidence > 0.6 and pred_label in ["prawda", "falsz"]:
                 if current_time - last_trigger_times.get(pred_label, 0) > 2.0:
                     last_trigger_times[pred_label] = current_time
+                    prediction_history.clear()
                     wykrycia.insert(0, f"✅ **{pred_label.upper()}** ({confidence:.0%})")
                     log_box.markdown("\n".join(wykrycia))
         
