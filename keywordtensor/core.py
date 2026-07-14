@@ -368,17 +368,19 @@ class Engine:
                         tensor_data = torch.tensor(audio_list[:total_samples], dtype=torch.float32).unsqueeze(0)
                         tensor_container.append(tensor_data)
 
-                # Odpalenie wątku nagrywającego w tle
                 t = threading.Thread(target=watek_nagrywania)
-                t.start()
                 
-                # Główny wątek zajmuje się akcjami użytkownika w tym samym czasie
                 if cls in actions:
-                    actions[cls]()
+                    sig = inspect.signature(actions[cls])
+                    if "start_callback" in sig.parameters:
+                        actions[cls](start_callback=t.start)
+                    else:
+                        t.start()
+                        actions[cls]()
                 else:
+                    t.start()
                     print(f"[{cls.upper()}] {i+1}/{samples}")
                     
-                # Oczekiwanie na zakończenie wątku nagrywania (jeśli akcja trwała krócej)
                 t.join()
                 tensor_data = tensor_container[0]
 

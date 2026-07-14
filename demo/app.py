@@ -18,7 +18,6 @@ st.title("KeywordTensor - prawda_falsz model")
 
 mode = st.radio("Tryb aplikacji:", ["🎙️ Przetestuj Model", "🛠️ Dodaj Próbki (Admin)"], horizontal=True)
 
-# Przesuwamy WebRTC na samą górę, żeby zawsze renderował się stabilnie na stronie.
 webrtc_ctx = webrtc_streamer(
     key="speech-to-text",
     mode=WebRtcMode.SENDONLY,
@@ -28,15 +27,12 @@ webrtc_ctx = webrtc_streamer(
     async_processing=True,
 )
 
-# Ominięcie laga interfejsu za pomocą własnego bufora historii i st.empty()
 if "historia_detekcji" not in st.session_state:
     st.session_state.historia_detekcji = []
 
-# Kontener, który będzie odświeżany natychmiastowo bez zawieszania UI
 ekran_logow = st.empty()
 
 def odswiez_ekran():
-    # Ograniczamy do 10 ostatnich logów, by nie zamulać przeglądarki
     ostatnie_logi = st.session_state.historia_detekcji[-10:]
     ekran_logow.markdown("<br>".join(ostatnie_logi), unsafe_allow_html=True)
 
@@ -74,19 +70,16 @@ def get_webrtc_stream(ctx, sr=16000):
         else:
             yield None
 
-# Obsługa stanu nagrywania - odporna na migotanie interfejsu (przeładowania)
 if "is_recording" not in st.session_state:
     st.session_state.is_recording = False
 
 if mode == "🎙️ Przetestuj Model":
-    # ORYGINALNY TRYB
     if webrtc_ctx.state.playing:
         engine = Engine()
         audio_source = get_webrtc_stream(webrtc_ctx)
         engine.listen("prawda_falsz", actions=actions, source=audio_source)
 
 else:
-    # TRYB ADMINA
     st.markdown("### Panel Administracyjny (Crowdsourcing)")
     haslo = st.text_input("Hasło administracyjne:", type="password")
     
@@ -130,7 +123,7 @@ else:
             def wyznacz_czasy(liczba_elementow):
                 if liczba_elementow == 0: return []
                 while True:
-                    czasy = [random.uniform(0.1, 1.9) for _ in range(liczba_elementow)]
+                    czasy = [random.uniform(0.1, 1.8) for _ in range(liczba_elementow)]
                     czasy.sort()
                     if liczba_elementow == 1: return czasy
                     if all(czasy[i] - czasy[i-1] >= 0.65 for i in range(1, liczba_elementow)):
@@ -159,22 +152,20 @@ else:
                         pass
 
             def tworz_akcje(klasa):
-                def akcja():
+                def akcja(start_callback):
                     clear_queue()
                     timeline = zbuduj_timeline(klasa)
                     
-                    # Wizualizacja planu przed odliczaniem
                     plan_str = " | ".join([f"**[{z['start']:.1f}s]** {z['tekst']}" for z in timeline])
-                    ekran.info(f"📘 **Plan słów na to nagranie (zapoznaj się):**\n\n{plan_str}")
-                    time.sleep(2)
+                    ekran.info(f"📘 **Plan słów na to nagranie (zapoznaj się przez 5 sekund):**\n\n{plan_str}")
+                    time.sleep(5.0)
                     
                     for i in [3, 2, 1]:
                         ekran.warning(f"⏳ Start za {i}...")
-                        time.sleep(0.6)
+                        time.sleep(1.0)
                         
-                    # Tutaj silnik Pytorcha w tle rozpoczął już nagrywanie!
+                    start_callback()
                     start_nagrania = time.time()
-                    st.session_state.aktualny_timeline = timeline # do zapisu w json
                     
                     while (t := time.time() - start_nagrania) < 3.0:
                         for z in timeline:
@@ -216,7 +207,6 @@ else:
                     st.session_state.is_recording = True
                     st.rerun()
             else:
-                # Rozpoczęto pętlę nagrywania - to się wykona odpornie na refresh
                 engine.record(
                     target=zapisz_i_wyslij,
                     classes=["prawda", "falsz"],
@@ -226,10 +216,8 @@ else:
                     duration=3.0
                 )
                 ekran.success("✅ Koniec sesji! Wszystko wysłane.")
-                # Resetujemy stan po skończeniu sesji
                 st.session_state.is_recording = False
                 
-            # Idle loop podtrzymujący WebRTC przy życiu kiedy nie ma nagrywania
             if not st.session_state.is_recording:
                 while webrtc_ctx.state.playing:
                     try:
