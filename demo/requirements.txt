@@ -5,3 +5,4 @@ torchaudio
 onnxruntime
 numpy
 # force reboot
+huggingface_hub==0.23.4

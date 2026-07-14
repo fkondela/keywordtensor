@@ -7,9 +7,19 @@ from streamlit_webrtc import webrtc_streamer, RTCConfiguration, WebRtcMode
 from keywordtensor.core import Engine
 import av
 import queue
+import time
+import torchaudio
+
+try:
+    from huggingface_hub import HfApi
+    HAS_HF = True
+except ImportError:
+    HAS_HF = False
 
 st.set_page_config(page_title="KeywordTensor Web", layout="wide")
 st.title("KeywordTensor - prawda_falsz model")
+
+mode = st.radio("Tryb aplikacji:", ["🎙️ Przetestuj Model", "🛠️ Dodaj Próbki (Admin)"], horizontal=True)
 
 webrtc_ctx = webrtc_streamer(
     key="speech-to-text",
@@ -55,4 +65,62 @@ def get_webrtc_stream(ctx, sr=16000):
 if webrtc_ctx.state.playing:
     engine = Engine()
     audio_source = get_webrtc_stream(webrtc_ctx)
-    engine.listen("prawda_falsz", actions=actions, source=audio_source)
+    
+    if mode == "🎙️ Przetestuj Model":
+        engine.listen("prawda_falsz", actions=actions, source=audio_source)
+    else:
+        st.markdown("### Panel Administracyjny (Crowdsourcing)")
+        haslo = st.text_input("Hasło administracyjne:", type="password")
+        
+        try:
+            oczekiwane_haslo = st.secrets["ADMIN_PASS"]
+        except Exception:
+            oczekiwane_haslo = "dev123" # Domyślne hasło developerskie
+            
+        if haslo == oczekiwane_haslo:
+            ekran = st.empty()
+            
+            def akcja_prawda():
+                ekran.error("🔴 MÓW TERAZ: PRAWDA (Trwa nagrywanie 3.0s...)")
+                
+            def akcja_falsz():
+                ekran.error("🔴 MÓW TERAZ: FAŁSZ (Trwa nagrywanie 3.0s...)")
+
+            moje_akcje = {
+                "prawda": akcja_prawda,
+                "falsz": akcja_falsz
+            }
+
+            def zapisz_i_wyslij(klasa, index, tensor_data, sr):
+                ekran.warning(f"⏳ Zapisuję próbkę dla: {klasa.upper()}...")
+                torchaudio.save("temp.wav", tensor_data, sr)
+                
+                if HAS_HF:
+                    try:
+                        api = HfApi(token=st.secrets["HF_TOKEN"])
+                        nazwa_pliku = f"{klasa}/probka_{int(time.time())}_{index}.wav"
+                        api.upload_file(
+                            path_or_fileobj="temp.wav",
+                            path_in_repo=nazwa_pliku,
+                            repo_id="fkondela/testowy_zbior_audio", # ZMIEŃ NA SWOJE REPOZYTORIUM!
+                            repo_type="dataset"
+                        )
+                    except Exception as e:
+                        ekran.error(f"Błąd wysyłania HF: {e}")
+                        time.sleep(2)
+                else:
+                    ekran.info("Brak huggingface_hub. Plik zapisany lokalnie jako temp.wav")
+                    time.sleep(1)
+
+            if st.button("Rozpocznij automatyczną sesję (4 próbki)"):
+                engine.record(
+                    target=zapisz_i_wyslij,
+                    classes=["prawda", "falsz"],
+                    samples=2, # Po 2 na klasę do testu
+                    actions=moje_akcje,
+                    source=audio_source,
+                    duration=3.0
+                )
+                ekran.success("✅ Koniec sesji! Wszystko wysłane.")
+        elif haslo != "":
+            st.error("Błędne hasło!")

@@ -317,3 +317,60 @@ class Engine:
             if stream is not None:
                 stream.stop()
                 stream.close()
+
+    def record(self, target, classes: list, samples: int = 100, actions: dict = None, source="microphone", duration: float = 3.0):
+        if actions is None:
+            actions = {}
+            
+        sr = 16000
+        total_samples = int(sr * duration)
+        is_mic = isinstance(source, str) and source.startswith("microphone")
+        
+        if isinstance(target, str):
+            for cls in classes:
+                os.makedirs(os.path.join(target, cls), exist_ok=True)
+
+        for i in range(samples):
+            for cls in classes:
+                if cls in actions:
+                    actions[cls]()
+                else:
+                    print(f"[{cls.upper()}] {i+1}/{samples}")
+
+                if is_mic:
+                    if not HAS_SOUNDDEVICE:
+                        raise RuntimeError("Live recording requires sounddevice.")
+                    
+                    device_id = None
+                    if ":" in source:
+                        try:
+                            device_id = int(source.split(":")[1])
+                        except ValueError:
+                            pass
+                            
+                    audio_data = sd.rec(total_samples, samplerate=sr, channels=1, dtype='float32', device=device_id)
+                    sd.wait()
+                    tensor_data = torch.tensor(audio_data, dtype=torch.float32).T
+                else:
+                    if not hasattr(source, "__iter__") and not hasattr(source, "__next__"):
+                        raise ValueError("Source must be an iterable/generator.")
+                    iterator_source = iter(source)
+                    
+                    audio_list = []
+                    collected = 0
+                    while collected < total_samples:
+                        try:
+                            chunk = next(iterator_source)
+                            if chunk is not None:
+                                audio_list.extend(chunk)
+                                collected += len(chunk)
+                        except StopIteration:
+                            break
+                            
+                    tensor_data = torch.tensor(audio_list[:total_samples], dtype=torch.float32).unsqueeze(0)
+
+                if isinstance(target, str):
+                    save_path = os.path.join(target, cls, f"{i}.wav")
+                    torchaudio.save(save_path, tensor_data, sr)
+                elif callable(target):
+                    target(cls, i, tensor_data, sr)
