@@ -180,7 +180,9 @@ elif mode == "🎮 Zagraj w Quiz":
     if "quiz_started" not in st.session_state:
         st.session_state.quiz_started = False
         
-    if not st.session_state.quiz_started:
+    if not webrtc_ctx.state.playing:
+        st.warning("⚠️ Zanim przejdziesz dalej, musisz włączyć mikrofon klikając przycisk START powyżej.")
+    elif not st.session_state.quiz_started:
         st.markdown("Witaj w interaktywnym quizie! Asystent AI zada Ci 10 pytań o kosmosie. Po każdym pytaniu masz 10 sekund na odpowiedź (Prawda lub Fałsz) do mikrofonu.")
         if st.button("▶️ Rozpocznij Quiz (Włącz dźwięk!)", type="primary"):
             st.session_state.quiz_started = True
@@ -204,6 +206,7 @@ elif mode == "🎮 Zagraj w Quiz":
             st.markdown(f"### Pytanie {idx+1}/10")
             st.markdown(f"**{q['q']}**")
             ekran_statusu = st.empty()
+            ekran_feedback = st.empty()
             
             if st.session_state.quiz_state == "ASKING":
                 ekran_statusu.info("Lektor czyta pytanie...")
@@ -238,8 +241,9 @@ elif mode == "🎮 Zagraj w Quiz":
                 st.rerun()
                 
             elif st.session_state.quiz_state == "FEEDBACK":
-                st.info(st.session_state.quiz_feedback)
-                st.markdown(f"*(Wyjaśnienie: {q['exp']})*")
+                with ekran_feedback.container():
+                    st.info(st.session_state.quiz_feedback)
+                    st.markdown(f"*(Wyjaśnienie: {q['exp']})*")
                 
                 if "feedback_played" not in st.session_state or st.session_state.feedback_played != idx:
                     play_tts(st.session_state.quiz_feedback_tts)
