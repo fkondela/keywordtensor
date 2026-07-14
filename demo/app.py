@@ -93,8 +93,13 @@ class QuizAnswerDetected(Exception):
     def __init__(self, answer):
         self.answer = answer
 
-def ans_prawda(): raise QuizAnswerDetected("prawda")
-def ans_falsz(): raise QuizAnswerDetected("falsz")
+def ans_prawda():
+    if time.time() - st.session_state.get("quiz_listen_start", 0) > 2.5:
+        raise QuizAnswerDetected("prawda")
+
+def ans_falsz():
+    if time.time() - st.session_state.get("quiz_listen_start", 0) > 2.5:
+        raise QuizAnswerDetected("falsz")
 
 quiz_actions = {
     "prawda": {"function": ans_prawda, "cooldown": 0.0},
@@ -212,6 +217,7 @@ elif mode == "🎮 Zagraj w Quiz":
                 engine = Engine()
                 audio_source = timed_webrtc_stream(webrtc_ctx, ekran_statusu, timeout=10.0)
                 odpowiedz = "brak"
+                st.session_state.quiz_listen_start = time.time()
                 try:
                     engine.listen("prawda_falsz", actions=quiz_actions, source=audio_source)
                 except QuizAnswerDetected as e:
