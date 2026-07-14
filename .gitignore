@@ -47,3 +47,5 @@ MANIFEST
 # IDE
 .vscode/
 .idea/
+
+demo/.streamlit/

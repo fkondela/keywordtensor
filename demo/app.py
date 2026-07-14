@@ -12,9 +12,20 @@ import torchaudio
 import random
 import json
 from faker import Faker
+import os
+from twilio.rest import Client
 
 st.set_page_config(page_title="KeywordTensor Web", layout="wide")
 st.title("KeywordTensor - prawda_falsz model")
+
+@st.cache_data
+def get_ice_servers():
+    account_sid = st.secrets["TWILIO_ACCOUNT_SID"]
+    auth_token = st.secrets["TWILIO_AUTH_TOKEN"]
+
+    client = Client(account_sid, auth_token)
+    token = client.tokens.create()
+    return token.ice_servers
 
 mode = st.radio("Tryb aplikacji:", ["🎙️ Przetestuj Model", "🛠️ Dodaj Próbki (Admin)"], horizontal=True)
 
@@ -22,17 +33,7 @@ webrtc_ctx = webrtc_streamer(
     key="speech-to-text",
     mode=WebRtcMode.SENDONLY,
     audio_receiver_size=256,
-    rtc_configuration=RTCConfiguration({"iceServers": [
-        {"urls": ["stun:stun.l.google.com:19302"]},
-        {"urls": ["stun:stun1.l.google.com:19302"]},
-        {"urls": ["stun:stun2.l.google.com:19302"]},
-        {"urls": ["stun:stun.services.mozilla.com"]},
-        {"urls": ["stun:stun.cloudflare.com:3478"]},
-        {"urls": ["stun:global.stun.twilio.com:3478"]},
-        {"urls": ["turn:openrelay.metered.ca:80"], "username": "openrelayproject", "credential": "openrelayproject"},
-        {"urls": ["turn:openrelay.metered.ca:443"], "username": "openrelayproject", "credential": "openrelayproject"},
-        {"urls": ["turn:openrelay.metered.ca:443?transport=tcp"], "username": "openrelayproject", "credential": "openrelayproject"}
-    ]}),
+    rtc_configuration={"iceServers": get_ice_servers()},
     media_stream_constraints={"video": False, "audio": True},
     async_processing=True,
 )

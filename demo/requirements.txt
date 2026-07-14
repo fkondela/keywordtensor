@@ -10,3 +10,5 @@ soundfile
 torchcodec
 
 faker==25.8.0
+
+twilio
