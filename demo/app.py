@@ -37,10 +37,12 @@ mode = st.radio("Tryb aplikacji:", ["🎙️ Przetestuj Model", "🛠️ Dodaj P
 if "previous_mode" not in st.session_state:
     st.session_state.previous_mode = mode
 
+stop_mic = None
 if st.session_state.previous_mode != mode:
     st.session_state.previous_mode = mode
     st.session_state.quiz_started = False
     st.session_state.is_recording = False
+    stop_mic = False
 
 webrtc_ctx = webrtc_streamer(
     key="speech-to-text",
@@ -49,6 +51,7 @@ webrtc_ctx = webrtc_streamer(
     rtc_configuration={"iceServers": get_ice_servers()},
     media_stream_constraints={"video": False, "audio": True},
     async_processing=True,
+    desired_playing_state=stop_mic
 )
 
 if "historia_detekcji" not in st.session_state:
@@ -152,9 +155,15 @@ def timed_webrtc_stream(ctx, ekran_statusu, timeout=10.0, sr=16000):
             yield None
 
 if mode == "🎙️ Przetestuj Model":
-    engine = Engine()
-    audio_source = get_webrtc_stream(webrtc_ctx)
-    engine.listen("prawda_falsz", actions=actions, source=audio_source)
+    if not webrtc_ctx.state.playing:
+        st.warning("⚠️ Najpierw uruchom mikrofon przyciskiem START na górze ekranu.")
+    else:
+        st.info("Pamiętaj: Testowanie działa w nieskończonej pętli. Aby zmienić zakładkę bez wizualnych błędów, zatrzymaj mikrofon lub odśwież stronę po testach.")
+        if st.button("▶️ Rozpocznij Testowanie Modelu na żywo", type="primary"):
+            st.success("Nasłuchiwanie aktywne...")
+            engine = Engine()
+            audio_source = get_webrtc_stream(webrtc_ctx)
+            engine.listen("prawda_falsz", actions=actions, source=audio_source)
 
 elif mode == "🎮 Zagraj w Quiz":
     st.subheader("🪐 Kosmiczny Quiz Głosowy AI")
