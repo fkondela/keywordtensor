@@ -24,11 +24,25 @@ webrtc_ctx = webrtc_streamer(
     async_processing=True,
 )
 
+# Ominięcie laga interfejsu za pomocą własnego bufora historii i st.empty()
+if "historia_detekcji" not in st.session_state:
+    st.session_state.historia_detekcji = []
+
+# Kontener, który będzie odświeżany natychmiastowo bez zawieszania UI
+ekran_logow = st.empty()
+
+def odswiez_ekran():
+    # Ograniczamy do 10 ostatnich logów, by nie zamulać przeglądarki
+    ostatnie_logi = st.session_state.historia_detekcji[-10:]
+    ekran_logow.markdown("<br>".join(ostatnie_logi), unsafe_allow_html=True)
+
 def pokaz_prawde(): 
-    st.success("✅ Predicted: PRAWDA")
+    st.session_state.historia_detekcji.append("✅ Predicted: <b style='color:green'>PRAWDA</b>")
+    odswiez_ekran()
 
 def pokaz_falsz():  
-    st.error("❌ Predicted: FAŁSZ")
+    st.session_state.historia_detekcji.append("❌ Predicted: <b style='color:red'>FAŁSZ</b>")
+    odswiez_ekran()
 
 actions = {
     "prawda": {"function": pokaz_prawde, "cooldown": 2.0}, 
