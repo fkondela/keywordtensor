@@ -9,6 +9,9 @@ import av
 import queue
 import time
 import torchaudio
+import random
+import json
+from faker import Faker
 
 st.set_page_config(page_title="KeywordTensor Web", layout="wide")
 st.title("KeywordTensor - prawda_falsz model")
@@ -100,6 +103,53 @@ else:
             
             ekran = st.empty()
             
+            WLASNE_SLOWA = [
+                "prawie", "prawo", "prawnik", "sprawdzam", "sprawa",
+                "fauna", "fala", "fałda", "farsz", "flaszka",
+                "pradawny", "falsyfikat", "szum", "wdowa", "owca",
+                "trawa", "brawa", "wada", "rada", "praca", "prasa", "pstrąg", "broda", "fraza",
+                "klosz", "masz", "nasz", "plusz", "gulasz", "fakt", "fart", "kosz",
+                "jeden", "dwa", "trzy", "cztery", "pięć", "sześć", "siedem", "osiem", "dziewięć", "dziesięć",
+                "biały", "czarny", "czerwony", "zielony", "niebieski", "żółty", "szary",
+                "dom", "drzewo", "auto", "rzeka", "krzesło", "ekran", "telefon", "woda", "słońce", "chmura", 
+                "ptak", "okno", "drzwi", "książka", "lampa", "biurko", "kubek", "buty", "szkoła", "ulica"
+            ]
+            
+            fake = Faker('pl_PL')
+            ZAKAZANE_SLOWA = ["prawda", "fałsz", "falsz", "prawdę", "prawde"]
+
+            def bezpieczne_slowo():
+                if random.random() < 0.35:
+                    return random.choice(WLASNE_SLOWA)
+                else:
+                    while True:
+                        slowo = fake.word().lower()
+                        if slowo not in ZAKAZANE_SLOWA:
+                            return slowo
+            
+            def wyznacz_czasy(liczba_elementow):
+                if liczba_elementow == 0: return []
+                while True:
+                    czasy = [random.uniform(0.1, 1.9) for _ in range(liczba_elementow)]
+                    czasy.sort()
+                    if liczba_elementow == 1: return czasy
+                    if all(czasy[i] - czasy[i-1] >= 0.65 for i in range(1, liczba_elementow)):
+                        return czasy
+
+            def zbuduj_timeline(klasa):
+                elementy = []
+                L = random.choice([2, 3]) if klasa != "other" else random.choice([1, 2, 3])
+                czasy = wyznacz_czasy(L)
+                for t in czasy:
+                    elementy.append({"start": t, "tekst": bezpieczne_slowo(), "odczytane": False, "docelowe": False})
+                        
+                if klasa in ["prawda", "falsz"] and L > 0:
+                    idx_komendy = random.randint(0, L - 1)
+                    elementy[idx_komendy]["tekst"] = "PRAWDA" if klasa == "prawda" else "FAŁSZ"
+                    elementy[idx_komendy]["docelowe"] = True
+                
+                return elementy
+            
             def clear_queue():
                 if webrtc_ctx.audio_receiver:
                     try:
@@ -108,36 +158,57 @@ else:
                     except queue.Empty:
                         pass
 
-            def akcja_prawda():
-                clear_queue()
-                ekran.error("🔴 MÓW TERAZ: PRAWDA (Trwa nagrywanie 3.0s...)")
-                
-            def akcja_falsz():
-                clear_queue()
-                ekran.error("🔴 MÓW TERAZ: FAŁSZ (Trwa nagrywanie 3.0s...)")
+            def tworz_akcje(klasa):
+                def akcja():
+                    clear_queue()
+                    timeline = zbuduj_timeline(klasa)
+                    
+                    # Wizualizacja planu przed odliczaniem
+                    plan_str = " | ".join([f"**[{z['start']:.1f}s]** {z['tekst']}" for z in timeline])
+                    ekran.info(f"📘 **Plan słów na to nagranie (zapoznaj się):**\n\n{plan_str}")
+                    time.sleep(2)
+                    
+                    for i in [3, 2, 1]:
+                        ekran.warning(f"⏳ Start za {i}...")
+                        time.sleep(0.6)
+                        
+                    # Tutaj silnik Pytorcha w tle rozpoczął już nagrywanie!
+                    start_nagrania = time.time()
+                    st.session_state.aktualny_timeline = timeline # do zapisu w json
+                    
+                    while (t := time.time() - start_nagrania) < 3.0:
+                        for z in timeline:
+                            if not z["odczytane"] and t >= z["start"]:
+                                if z["docelowe"]:
+                                    ekran.error(f"🔴 MÓW: **{z['tekst']}**")
+                                else:
+                                    ekran.warning(f"⚪ MÓW: {z['tekst']}")
+                                z["odczytane"] = True
+                        time.sleep(0.05)
+                        
+                    ekran.success("✅ Nagrywanie zakończone! Trwa wysyłanie...")
+                return akcja
 
             moje_akcje = {
-                "prawda": akcja_prawda,
-                "falsz": akcja_falsz
+                "prawda": tworz_akcje("prawda"),
+                "falsz": tworz_akcje("falsz")
             }
 
             def zapisz_i_wyslij(klasa, index, tensor_data, sr):
-                ekran.warning(f"⏳ Zapisuję próbkę dla: {klasa.upper()}...")
-                
                 torchaudio.save("temp.wav", tensor_data, sr)
                 
                 try:
                     from huggingface_hub import HfApi
                     api = HfApi(token=st.secrets["HF_TOKEN"])
-                    nazwa_pliku = f"{klasa}/probka_{int(time.time())}_{index}.wav"
+                    baza_nazwy = f"{klasa}/probka_{int(time.time())}_{random.randint(1000, 9999)}_{index}"
                     api.upload_file(
                         path_or_fileobj="temp.wav",
-                        path_in_repo=nazwa_pliku,
+                        path_in_repo=f"{baza_nazwy}.wav",
                         repo_id="fkondela/KeywordTensor_prawda_falsz", 
                         repo_type="dataset"
                     )
                 except Exception as e:
-                    ekran.error(f"Błąd wysyłania (Brak HF_TOKEN lub awaria HF): {e}")
+                    pass
                     time.sleep(2)
 
             if not st.session_state.is_recording:

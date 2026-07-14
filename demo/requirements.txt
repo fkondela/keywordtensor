@@ -8,3 +8,5 @@ numpy
 huggingface_hub==0.23.4
 soundfile
 torchcodec
+
+faker==25.8.0

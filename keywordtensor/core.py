@@ -10,6 +10,7 @@ from collections import deque
 import numpy as np
 import inspect
 import queue
+import threading
 
 try:
     import sounddevice as sd
@@ -332,42 +333,54 @@ class Engine:
 
         for i in range(samples):
             for cls in classes:
+                tensor_container = []
+                
+                def watek_nagrywania():
+                    if is_mic:
+                        if not HAS_SOUNDDEVICE:
+                            raise RuntimeError("Live recording requires sounddevice.")
+                        device_id = None
+                        if ":" in source:
+                            try:
+                                device_id = int(source.split(":")[1])
+                            except ValueError:
+                                pass
+                        audio_data = sd.rec(total_samples, samplerate=sr, channels=1, dtype='float32', device=device_id)
+                        sd.wait()
+                        tensor_data = torch.tensor(audio_data, dtype=torch.float32).T
+                        tensor_container.append(tensor_data)
+                    else:
+                        if not hasattr(source, "__iter__") and not hasattr(source, "__next__"):
+                            raise ValueError("Source must be an iterable/generator.")
+                        iterator_source = iter(source)
+                        
+                        audio_list = []
+                        collected = 0
+                        while collected < total_samples:
+                            try:
+                                chunk = next(iterator_source)
+                                if chunk is not None:
+                                    audio_list.extend(chunk)
+                                    collected += len(chunk)
+                            except StopIteration:
+                                break
+                                
+                        tensor_data = torch.tensor(audio_list[:total_samples], dtype=torch.float32).unsqueeze(0)
+                        tensor_container.append(tensor_data)
+
+                # Odpalenie wątku nagrywającego w tle
+                t = threading.Thread(target=watek_nagrywania)
+                t.start()
+                
+                # Główny wątek zajmuje się akcjami użytkownika w tym samym czasie
                 if cls in actions:
                     actions[cls]()
                 else:
                     print(f"[{cls.upper()}] {i+1}/{samples}")
-
-                if is_mic:
-                    if not HAS_SOUNDDEVICE:
-                        raise RuntimeError("Live recording requires sounddevice.")
                     
-                    device_id = None
-                    if ":" in source:
-                        try:
-                            device_id = int(source.split(":")[1])
-                        except ValueError:
-                            pass
-                            
-                    audio_data = sd.rec(total_samples, samplerate=sr, channels=1, dtype='float32', device=device_id)
-                    sd.wait()
-                    tensor_data = torch.tensor(audio_data, dtype=torch.float32).T
-                else:
-                    if not hasattr(source, "__iter__") and not hasattr(source, "__next__"):
-                        raise ValueError("Source must be an iterable/generator.")
-                    iterator_source = iter(source)
-                    
-                    audio_list = []
-                    collected = 0
-                    while collected < total_samples:
-                        try:
-                            chunk = next(iterator_source)
-                            if chunk is not None:
-                                audio_list.extend(chunk)
-                                collected += len(chunk)
-                        except StopIteration:
-                            break
-                            
-                    tensor_data = torch.tensor(audio_list[:total_samples], dtype=torch.float32).unsqueeze(0)
+                # Oczekiwanie na zakończenie wątku nagrywania (jeśli akcja trwała krócej)
+                t.join()
+                tensor_data = tensor_container[0]
 
                 if isinstance(target, str):
                     save_path = os.path.join(target, cls, f"{i}.wav")
