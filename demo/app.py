@@ -35,7 +35,10 @@ def get_webrtc_stream(ctx, sr=16000):
     resampler = av.AudioResampler(format='flt', layout='mono', rate=sr)
     while ctx.state.playing:
         try:
-            frames = ctx.audio_receiver.get_frames(timeout=0.0)
+            if ctx.audio_receiver is None:
+                frames = []
+            else:
+                frames = ctx.audio_receiver.get_frames(timeout=0.0)
         except queue.Empty:
             frames = []
             
