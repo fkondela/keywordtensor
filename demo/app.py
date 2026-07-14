@@ -133,7 +133,7 @@ else:
                     api.upload_file(
                         path_or_fileobj="temp.wav",
                         path_in_repo=nazwa_pliku,
-                        repo_id="fkondela/testowy_zbior_audio", # ZMIEŃ NA SWOJE REPOZYTORIUM
+                        repo_id="fkondela/KeywordTensor_prawda_falsz", 
                         repo_type="dataset"
                     )
                 except Exception as e:
