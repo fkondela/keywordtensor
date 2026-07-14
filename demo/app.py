@@ -37,21 +37,18 @@ mode = st.radio("Tryb aplikacji:", ["🎙️ Przetestuj Model", "🛠️ Dodaj P
 if "previous_mode" not in st.session_state:
     st.session_state.previous_mode = mode
 
-stop_mic = None
 if st.session_state.previous_mode != mode:
     st.session_state.previous_mode = mode
     st.session_state.quiz_started = False
     st.session_state.is_recording = False
-    stop_mic = False
 
 webrtc_ctx = webrtc_streamer(
-    key="speech-to-text",
+    key=f"speech-to-text-{mode}",
     mode=WebRtcMode.SENDONLY,
     audio_receiver_size=2048,
     rtc_configuration={"iceServers": get_ice_servers()},
     media_stream_constraints={"video": False, "audio": True},
     async_processing=True,
-    desired_playing_state=stop_mic
 )
 
 if "historia_detekcji" not in st.session_state:
