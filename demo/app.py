@@ -34,6 +34,14 @@ st.markdown("---")
 st.markdown("### 🟢 Krok 2: Wybierz tryb")
 mode = st.radio("Tryb aplikacji:", ["🎙️ Przetestuj Model", "🛠️ Dodaj Próbki (Admin)", "🎮 Zagraj w Quiz"], horizontal=True, label_visibility="collapsed")
 
+if "previous_mode" not in st.session_state:
+    st.session_state.previous_mode = mode
+
+if st.session_state.previous_mode != mode:
+    st.session_state.previous_mode = mode
+    st.session_state.quiz_started = False
+    st.session_state.is_recording = False
+
 webrtc_ctx = webrtc_streamer(
     key="speech-to-text",
     mode=WebRtcMode.SENDONLY,
