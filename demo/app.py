@@ -5,6 +5,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import streamlit as st
 from streamlit_webrtc import webrtc_streamer, RTCConfiguration, WebRtcMode
 from keywordtensor.core import Engine
+import av
+import queue
 
 st.set_page_config(page_title="KeywordTensor Web", layout="wide")
 st.title("KeywordTensor - prawda_falsz model")
@@ -29,6 +31,25 @@ actions = {
     "falsz": {"function": pokaz_falsz, "cooldown": 2.0}
 }
 
+def get_webrtc_stream(ctx, sr=16000):
+    resampler = av.AudioResampler(format='flt', layout='mono', rate=sr)
+    while ctx.state.playing:
+        try:
+            frames = ctx.audio_receiver.get_frames(timeout=0.0)
+        except queue.Empty:
+            frames = []
+            
+        clean_audio = []
+        for frame in frames:
+            for clean_frame in resampler.resample(frame):
+                clean_audio.extend(clean_frame.to_ndarray()[0].tolist())
+                
+        if clean_audio:
+            yield clean_audio
+        else:
+            yield None
+
 if webrtc_ctx.state.playing:
     engine = Engine()
-    engine.listen("prawda_falsz", actions=actions, source=webrtc_ctx)
+    audio_source = get_webrtc_stream(webrtc_ctx)
+    engine.listen("prawda_falsz", actions=actions, source=audio_source)

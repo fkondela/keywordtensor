@@ -18,12 +18,6 @@ except ImportError:
     HAS_SOUNDDEVICE = False
     sd = None
 
-try:
-    import av
-    HAS_AV = True
-except ImportError:
-    HAS_AV = False
-    av = None
 
 try:
     from fastai.vision.all import *
@@ -189,7 +183,7 @@ class Engine:
             )
 
 
-    def listen(self, model_name, actions=None, min_confidence=0.6, n_averages=3, device=None, source=None):
+    def listen(self, model_name, actions=None, min_confidence=0.6, n_averages=3, source="microphone"):
         
         if actions is None:
             actions = {}
@@ -271,44 +265,48 @@ class Engine:
                             last_trigger_times[predicted_class] = time.time()
 
         current_sr = None
-        webrtc_ctx = source
+        stream = None
         
-        if webrtc_ctx:
-            if not HAS_AV:
-                raise RuntimeError("Live listening via WebRTC requires PyAV. Install it via pip: pip install av")
-            resampler = av.AudioResampler(format='flt', layout='mono', rate=sr)
-            
-            def poll_audio():
-                nonlocal current_sr, audio_buffer
-                try: frames = webrtc_ctx.audio_receiver.get_frames(timeout=0.0)
-                except queue.Empty: frames = []
-                for frame in frames:
-                    if current_sr is None: 
-                        current_sr = sr # Resampler gives us EXACTLY sr (16000)
-                        max_len = int(current_sr * duration)
-                        audio_buffer = deque([0.0] * max_len, maxlen=max_len)
-                        
-                    clean_frames = resampler.resample(frame)
-                    for clean_frame in clean_frames:
-                        audio_buffer.extend(clean_frame.to_ndarray()[0].tolist())
-                return current_sr
-        else:
+        is_mic = isinstance(source, str) and source.startswith("microphone")
+        
+        if is_mic:
             if not HAS_SOUNDDEVICE:
                 raise RuntimeError("Live listening requires sounddevice. Install it via pip: pip install sounddevice")
+            
+            device_id = None
+            if ":" in source:
+                try:
+                    device_id = int(source.split(":")[1])
+                except ValueError:
+                    pass
+                    
             def _audio_callback(indata, frames, time_info, status):
                 audio_buffer.extend(indata[:, 0].tolist())
-            stream = sd.InputStream(samplerate=sr, channels=1, callback=_audio_callback)
+                
+            stream = sd.InputStream(samplerate=sr, channels=1, device=device_id, callback=_audio_callback)
             stream.start()
             current_sr = sr
-            def poll_audio():
-                return current_sr
+        else:
+            if not hasattr(source, "__iter__") and not hasattr(source, "__next__"):
+                raise ValueError("Source must be 'microphone' or an iterable/generator of audio samples.")
+            iterator_source = iter(source)
 
         try:
             while True:
-                if webrtc_ctx and not webrtc_ctx.state.playing:
-                    break
-                    
-                active_sr = poll_audio()
+                active_sr = None
+                
+                if is_mic:
+                    active_sr = current_sr
+                else:
+                    try:
+                        chunk = next(iterator_source)
+                        if chunk is not None:
+                            if current_sr is None:
+                                current_sr = sr
+                            audio_buffer.extend(chunk)
+                        active_sr = current_sr
+                    except StopIteration:
+                        break
                 
                 if active_sr and len(audio_buffer) >= int(active_sr * duration):
                     current_buffer = list(audio_buffer)[-int(active_sr * duration):]
@@ -316,6 +314,6 @@ class Engine:
                     
                 time.sleep(0.05)
         finally:
-            if not webrtc_ctx:
+            if stream is not None:
                 stream.stop()
                 stream.close()

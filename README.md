@@ -103,7 +103,7 @@ model.listen(
     },
     min_confidence=0.6,
     n_averages=3,
-    device=None # Optional: specify audio input device ID
+    source="microphone"
 )
 ```
 
@@ -113,7 +113,10 @@ The `.listen()` method itself accepts the following runtime arguments:
 - `actions` *(default: None)*: Optional dictionary mapping detected keywords to Python callbacks. You can pass just a function (defaults to 0.0s cooldown), or a dictionary for precise control: `{"function": your_function, "cooldown": 2.0}`. Cooldowns are tracked individually per keyword!
 - `min_confidence` *(default: 0.6)*: The probability threshold (0.0 to 1.0) required to trigger the action.
 - `n_averages` *(default: 3)*: Temporal smoothing. Averages the last *N* predictions to prevent false positive clicks.
-- `device` *(default: None)*: Specific ID or name of the microphone to use (e.g., from `sounddevice.query_devices()`). If `None`, the system default is used.
+- `source` *(default: "microphone")*: Audio input source. 
+  - `"microphone"` uses the default system microphone. 
+  - `"microphone:1"` uses a specific microphone ID. 
+  - `my_variable` You can also pass your own Python variable (a generator) that yields current microphone audio data (arrays of Float32 at 16000Hz) to easily plug KeywordTensor into your own custom apps!
 
 **Config file parameters:**
 The rest of the underlying parameters are loaded automatically from the `<model_name>_config.json` file! 
