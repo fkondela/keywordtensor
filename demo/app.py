@@ -408,32 +408,15 @@ else:
                     pass
                     time.sleep(2)
 
-            if not st.session_state.is_recording:
-                if st.button("Rozpocznij automatyczną sesję (4 próbki)"):
-                    st.session_state.is_recording = True
-                    st.rerun()
-            else:
-                engine.record(
-                    target=zapisz_i_wyslij,
-                    classes=["prawda", "falsz"],
-                    samples=2,
-                    actions=moje_akcje,
-                    source=audio_source,
-                    duration=3.0
-                )
-                ekran.success("✅ Koniec sesji! Wszystko wysłane.")
-                st.session_state.is_recording = False
-                
-            if not st.session_state.is_recording:
-                while webrtc_ctx.state.playing:
-                    try:
-                        if webrtc_ctx.audio_receiver:
-                            webrtc_ctx.audio_receiver.get_frames(timeout=0.1)
-                    except queue.Empty:
-                        pass
-                    time.sleep(0.05)
-        else:
-            st.info("👆 Uruchom mikrofon (przycisk START na górze), aby rozpocząć nagrywanie próbek.")
-                
-    elif haslo != "":
-        st.error("Błędne hasło!")
+            engine.record(
+                target=zapisz_i_wyslij,
+                classes=["prawda", "falsz"],
+                samples=2,
+                actions=moje_akcje,
+                source=audio_source,
+                duration=3.0
+            )
+            ekran.success("✅ Koniec sesji! Wszystko wysłane.")
+            st.session_state.is_recording = False
+            time.sleep(2.0)
+            st.rerun()
