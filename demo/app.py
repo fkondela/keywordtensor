@@ -20,14 +20,18 @@ st.title("KeywordTensor - prawda_falsz model")
 
 @st.cache_data
 def get_ice_servers():
-    account_sid = st.secrets["TWILIO_ACCOUNT_SID"]
-    auth_token = st.secrets["TWILIO_AUTH_TOKEN"]
+    try:
+        account_sid = st.secrets["TWILIO_ACCOUNT_SID"]
+        auth_token = st.secrets["TWILIO_AUTH_TOKEN"]
+    except KeyError:
+        return [{"urls": ["stun:stun.l.google.com:19302"]}]
 
     client = Client(account_sid, auth_token)
     token = client.tokens.create()
     return token.ice_servers
 
-mode = st.radio("Tryb aplikacji:", ["🎙️ Przetestuj Model", "🛠️ Dodaj Próbki (Admin)"], horizontal=True)
+st.markdown("### 🔴 Krok 1: Aktywuj Mikrofon")
+st.markdown("*Wybierz swój mikrofon z listy (Select device) i kliknij **START**, aby połączyć się z serwerem.*")
 
 webrtc_ctx = webrtc_streamer(
     key="speech-to-text",
@@ -37,6 +41,14 @@ webrtc_ctx = webrtc_streamer(
     media_stream_constraints={"video": False, "audio": True},
     async_processing=True,
 )
+
+if not webrtc_ctx.state.playing:
+    st.warning("⚠️ Zanim przejdziesz dalej, musisz aktywować mikrofon powyżej. Kliknij START.")
+    st.stop()
+
+st.markdown("---")
+st.markdown("### 🟢 Krok 2: Wybierz tryb")
+mode = st.radio("Tryb aplikacji:", ["🎙️ Przetestuj Model", "🛠️ Dodaj Próbki (Admin)"], horizontal=True, label_visibility="collapsed")
 
 if "historia_detekcji" not in st.session_state:
     st.session_state.historia_detekcji = []
@@ -85,10 +97,9 @@ if "is_recording" not in st.session_state:
     st.session_state.is_recording = False
 
 if mode == "🎙️ Przetestuj Model":
-    if webrtc_ctx.state.playing:
-        engine = Engine()
-        audio_source = get_webrtc_stream(webrtc_ctx)
-        engine.listen("prawda_falsz", actions=actions, source=audio_source)
+    engine = Engine()
+    audio_source = get_webrtc_stream(webrtc_ctx)
+    engine.listen("prawda_falsz", actions=actions, source=audio_source)
 
 else:
     st.markdown("### Panel Administracyjny (Crowdsourcing)")
@@ -101,7 +112,7 @@ else:
         
     if haslo == oczekiwane_haslo:
         
-        if webrtc_ctx.state.playing:
+        if True: # Stan mikrofonu jest już gwarantowany przez st.stop() na górze
             engine = Engine()
             audio_source = get_webrtc_stream(webrtc_ctx)
             
@@ -214,7 +225,7 @@ else:
                     time.sleep(2)
 
             if not st.session_state.is_recording:
-                if st.button("Rozpocznij automatyczną sesję (4 próbki)"):
+                if st.button("▶️ START - Rozpocznij automatyczną sesję (4 próbki)", type="primary"):
                     st.session_state.is_recording = True
                     st.rerun()
             else:
@@ -237,8 +248,5 @@ else:
                     except queue.Empty:
                         pass
                     time.sleep(0.05)
-        else:
-            st.info("👆 Uruchom mikrofon (przycisk START na górze), aby rozpocząć nagrywanie próbek.")
-                
     elif haslo != "":
         st.error("Błędne hasło!")
