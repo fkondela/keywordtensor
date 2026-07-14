@@ -167,6 +167,8 @@ else:
                     except queue.Empty:
                         pass
                     time.sleep(0.05)
+        else:
+            st.info("👆 Uruchom mikrofon (przycisk START na górze), aby rozpocząć nagrywanie próbek.")
                 
     elif haslo != "":
         st.error("Błędne hasło!")
