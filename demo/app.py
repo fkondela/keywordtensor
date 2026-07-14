@@ -30,7 +30,9 @@ def get_ice_servers():
     token = client.tokens.create()
     return token.ice_servers
 
-mode = st.radio("Tryb aplikacji:", ["🎙️ Przetestuj Model", "🛠️ Dodaj Próbki (Admin)"], horizontal=True)
+st.markdown("---")
+st.markdown("### 🟢 Krok 2: Wybierz tryb")
+mode = st.radio("Tryb aplikacji:", ["🎙️ Przetestuj Model", "🛠️ Dodaj Próbki (Admin)", "🎮 Zagraj w Quiz"], horizontal=True, label_visibility="collapsed")
 
 webrtc_ctx = webrtc_streamer(
     key="speech-to-text",
@@ -87,11 +89,158 @@ def get_webrtc_stream(ctx, sr=16000):
 if "is_recording" not in st.session_state:
     st.session_state.is_recording = False
 
+class QuizAnswerDetected(Exception):
+    def __init__(self, answer):
+        self.answer = answer
+
+def ans_prawda(): raise QuizAnswerDetected("prawda")
+def ans_falsz(): raise QuizAnswerDetected("falsz")
+
+quiz_actions = {
+    "prawda": {"function": ans_prawda, "cooldown": 0.0},
+    "falsz": {"function": ans_falsz, "cooldown": 0.0}
+}
+
+def timed_webrtc_stream(ctx, ekran_statusu, timeout=10.0, sr=16000):
+    resampler = av.AudioResampler(format='flt', layout='mono', rate=sr)
+    start_time = time.time()
+    
+    if ctx.audio_receiver:
+        try:
+            while True:
+                ctx.audio_receiver.get_frames(timeout=0.0)
+        except queue.Empty:
+            pass
+
+    while ctx.state.playing:
+        elapsed = time.time() - start_time
+        if elapsed >= timeout:
+            break
+            
+        pozostalo = int(timeout - elapsed)
+        ekran_statusu.info(f"⏳ Słucham... Masz {pozostalo} sekund. Odpowiedz wyraźnie: PRAWDA lub FAŁSZ.")
+        
+        try:
+            if ctx.audio_receiver is None:
+                frames = []
+            else:
+                frames = ctx.audio_receiver.get_frames(timeout=0.1)
+        except queue.Empty:
+            frames = []
+            
+        clean_audio = []
+        for frame in frames:
+            for clean_frame in resampler.resample(frame):
+                clean_audio.extend(clean_frame.to_ndarray()[0].tolist())
+                
+        if clean_audio:
+            yield clean_audio
+        else:
+            yield None
+
 if mode == "🎙️ Przetestuj Model":
-    if webrtc_ctx.state.playing:
-        engine = Engine()
-        audio_source = get_webrtc_stream(webrtc_ctx)
-        engine.listen("prawda_falsz", actions=actions, source=audio_source)
+    engine = Engine()
+    audio_source = get_webrtc_stream(webrtc_ctx)
+    engine.listen("prawda_falsz", actions=actions, source=audio_source)
+
+elif mode == "🎮 Zagraj w Quiz":
+    st.subheader("🪐 Kosmiczny Quiz Głosowy AI")
+    
+    ekran_audio = st.empty()
+    
+    def play_tts(text):
+        from gtts import gTTS
+        import io
+        import base64
+        tts = gTTS(text=text, lang='pl')
+        fp = io.BytesIO()
+        tts.write_to_fp(fp)
+        b64 = base64.b64encode(fp.getvalue()).decode()
+        md = f'<audio autoplay="true"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
+        ekran_audio.markdown(md, unsafe_allow_html=True)
+        
+    pytania = [
+        {"q": "Czarna dziura świeci tak jasno, że widać ją z daleka.", "a": "falsz", "exp": "Czarna dziura pochłania światło i jest niewidoczna."},
+        {"q": "Słońce to ponad 99 procent masy całego układu słonecznego.", "a": "prawda", "exp": "Dokładnie tak, Słońce jest gigantyczne."},
+        {"q": "Księżyc ma własne źródło światła.", "a": "falsz", "exp": "Księżyc tylko odbija światło słoneczne."},
+        {"q": "Droga Mleczna to nasza galaktyka.", "a": "prawda", "exp": "Zgadza się, żyjemy w Drodze Mlecznej."},
+        {"q": "Woda w kosmosie w ogóle nie występuje.", "a": "falsz", "exp": "Woda w postaci lodu jest bardzo powszechna w kosmosie."},
+        {"q": "Ziemia krąży wokół Słońca.", "a": "prawda", "exp": "Ziemia robi pełne okrążenie w 365 dni."},
+        {"q": "Wenus jest najzimniejszą planetą.", "a": "falsz", "exp": "Wenus to najgorętsza planeta ze względu na atmosferę."},
+        {"q": "Gwiazda Polarna zawsze wskazuje północ.", "a": "prawda", "exp": "Na naszej półkuli to prawda."},
+        {"q": "Mars jest nazywany Błękitną Planetą.", "a": "falsz", "exp": "Mars to Czerwona Planeta, a Błękitną jest Ziemia."},
+        {"q": "Na Księżycu jest grawitacja.", "a": "prawda", "exp": "Jest, ale około 6 razy słabsza niż na Ziemi."}
+    ]
+    
+    if "quiz_started" not in st.session_state:
+        st.session_state.quiz_started = False
+        
+    if not st.session_state.quiz_started:
+        st.markdown("Witaj w interaktywnym quizie! Asystent AI zada Ci 10 pytań o kosmosie. Po każdym pytaniu masz 10 sekund na odpowiedź (Prawda lub Fałsz) do mikrofonu.")
+        if st.button("▶️ Rozpocznij Quiz (Włącz dźwięk!)", type="primary"):
+            st.session_state.quiz_started = True
+            st.session_state.quiz_q_idx = 0
+            st.session_state.quiz_score = 0
+            st.session_state.quiz_state = "ASKING"
+            if "quiz_end_tts" in st.session_state: del st.session_state.quiz_end_tts
+            st.rerun()
+    else:
+        idx = st.session_state.quiz_q_idx
+        if idx >= len(pytania):
+            st.success(f"🎉 Koniec Quizu! Twój wynik to: {st.session_state.quiz_score} / {len(pytania)}")
+            if "quiz_end_tts" not in st.session_state:
+                play_tts(f"Koniec quizu! Twój wynik to {st.session_state.quiz_score} na {len(pytania)}. Dziękuję za grę!")
+                st.session_state.quiz_end_tts = True
+            if st.button("🔄 Zagraj ponownie"):
+                st.session_state.quiz_started = False
+                st.rerun()
+        else:
+            q = pytania[idx]
+            st.markdown(f"### Pytanie {idx+1}/10")
+            st.markdown(f"**{q['q']}**")
+            ekran_statusu = st.empty()
+            
+            if st.session_state.quiz_state == "ASKING":
+                ekran_statusu.info("Lektor czyta pytanie...")
+                play_tts(f"Pytanie {idx+1}. {q['q']}")
+                time.sleep(6.0) # Czas na przeczytanie pytania
+                st.session_state.quiz_state = "LISTENING"
+                st.rerun()
+                
+            elif st.session_state.quiz_state == "LISTENING":
+                engine = Engine()
+                audio_source = timed_webrtc_stream(webrtc_ctx, ekran_statusu, timeout=10.0)
+                odpowiedz = "brak"
+                try:
+                    engine.listen("prawda_falsz", actions=quiz_actions, source=audio_source)
+                except QuizAnswerDetected as e:
+                    odpowiedz = e.answer
+                
+                if odpowiedz == "brak":
+                    st.session_state.quiz_feedback = "Brak odpowiedzi. Czas minął."
+                    st.session_state.quiz_feedback_tts = f"Brak odpowiedzi. {q['exp']}"
+                elif odpowiedz == q["a"]:
+                    st.session_state.quiz_score += 1
+                    st.session_state.quiz_feedback = f"✅ Świetnie! (Zrozumiano: {odpowiedz.upper()})"
+                    st.session_state.quiz_feedback_tts = f"Świetnie! {q['exp']}"
+                else:
+                    st.session_state.quiz_feedback = f"❌ Pudło! (Zrozumiano: {odpowiedz.upper()})"
+                    st.session_state.quiz_feedback_tts = f"Pudło. {q['exp']}"
+                
+                st.session_state.quiz_state = "FEEDBACK"
+                st.rerun()
+                
+            elif st.session_state.quiz_state == "FEEDBACK":
+                st.info(st.session_state.quiz_feedback)
+                st.markdown(f"*(Wyjaśnienie: {q['exp']})*")
+                
+                if "feedback_played" not in st.session_state or st.session_state.feedback_played != idx:
+                    play_tts(st.session_state.quiz_feedback_tts)
+                    st.session_state.feedback_played = idx
+                    time.sleep(5.0) 
+                    st.session_state.quiz_q_idx += 1
+                    st.session_state.quiz_state = "ASKING"
+                    st.rerun()
 
 else:
     st.markdown("### Panel Administracyjny (Crowdsourcing)")
