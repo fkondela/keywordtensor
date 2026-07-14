@@ -30,20 +30,20 @@ def get_ice_servers():
     token = client.tokens.create()
     return token.ice_servers
 
-st.markdown("### 🔴 Krok 1: Aktywuj Mikrofon")
-st.markdown("*Wybierz swój mikrofon z listy (Select device) i kliknij **START**, aby połączyć się z serwerem.*")
+with st.expander("🔴 Krok 1: Aktywuj Mikrofon (Kliknij, aby rozwinąć)", expanded=True):
+    st.markdown("*Wybierz swój mikrofon z listy (Select device) i kliknij **START**, aby połączyć się z serwerem.*")
 
-webrtc_ctx = webrtc_streamer(
-    key="speech-to-text",
-    mode=WebRtcMode.SENDONLY,
-    audio_receiver_size=256,
-    rtc_configuration={"iceServers": get_ice_servers()},
-    media_stream_constraints={"video": False, "audio": True},
-    async_processing=True,
-)
+    webrtc_ctx = webrtc_streamer(
+        key="speech-to-text",
+        mode=WebRtcMode.SENDONLY,
+        audio_receiver_size=256,
+        rtc_configuration={"iceServers": get_ice_servers()},
+        media_stream_constraints={"video": False, "audio": True},
+        async_processing=True,
+    )
 
 if not webrtc_ctx.state.playing:
-    st.warning("⚠️ Zanim przejdziesz dalej, musisz aktywować mikrofon powyżej. Kliknij START.")
+    st.warning("⚠️ Zanim przejdziesz dalej, musisz aktywować mikrofon. Rozwiń Krok 1 powyżej i kliknij START.")
     st.stop()
 
 st.markdown("---")
