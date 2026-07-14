@@ -37,7 +37,7 @@ mode = st.radio("Tryb aplikacji:", ["🎙️ Przetestuj Model", "🛠️ Dodaj P
 webrtc_ctx = webrtc_streamer(
     key="speech-to-text",
     mode=WebRtcMode.SENDONLY,
-    audio_receiver_size=256,
+    audio_receiver_size=2048,
     rtc_configuration={"iceServers": get_ice_servers()},
     media_stream_constraints={"video": False, "audio": True},
     async_processing=True,
@@ -202,7 +202,8 @@ elif mode == "🎮 Zagraj w Quiz":
             
             if st.session_state.quiz_state == "ASKING":
                 ekran_statusu.info("Lektor czyta pytanie...")
-                play_tts(f"Pytanie {idx+1}. {q['q']}")
+                slowne_numery = ["pierwsze", "drugie", "trzecie", "czwarte", "piąte", "szóste", "siódme", "ósme", "dziewiąte", "dziesiąte"]
+                play_tts(f"Pytanie {slowne_numery[idx]}. {q['q']}")
                 time.sleep(6.0) # Czas na przeczytanie pytania
                 st.session_state.quiz_state = "LISTENING"
                 st.rerun()
