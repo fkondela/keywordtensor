@@ -8,6 +8,7 @@ from keywordtensor.core import Engine
 import av
 import queue
 import time
+import torchaudio
 
 st.set_page_config(page_title="KeywordTensor Web", layout="wide")
 st.title("KeywordTensor - prawda_falsz model")
@@ -123,7 +124,6 @@ else:
             def zapisz_i_wyslij(klasa, index, tensor_data, sr):
                 ekran.warning(f"⏳ Zapisuję próbkę dla: {klasa.upper()}...")
                 
-                import torchaudio
                 torchaudio.save("temp.wav", tensor_data, sr)
                 
                 try:
