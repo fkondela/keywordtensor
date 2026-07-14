@@ -61,9 +61,12 @@ def get_webrtc_stream(ctx, sr=16000):
             if ctx.audio_receiver is None:
                 frames = []
             else:
-                frames = ctx.audio_receiver.get_frames(timeout=0.0)
+                frames = ctx.audio_receiver.get_frames(timeout=0.05)
         except queue.Empty:
             frames = []
+            
+        if len(frames) > 30:
+            frames = frames[-30:]
             
         clean_audio = []
         for frame in frames:
@@ -353,7 +356,7 @@ else:
                 if webrtc_ctx.audio_receiver:
                     try:
                         while True:
-                            webrtc_ctx.audio_receiver.get_frames(timeout=0.0)
+                            webrtc_ctx.audio_receiver.get_frames(timeout=0.05)
                     except queue.Empty:
                         pass
 
