@@ -54,6 +54,25 @@ webrtc_ctx = webrtc_streamer(
 if "historia_detekcji" not in st.session_state:
     st.session_state.historia_detekcji = []
 
+ekran_logow = st.empty()
+
+def odswiez_ekran():
+    ostatnie_logi = st.session_state.historia_detekcji[-10:]
+    ekran_logow.markdown("<br>".join(ostatnie_logi), unsafe_allow_html=True)
+
+def pokaz_prawde(): 
+    st.session_state.historia_detekcji.append("✅ Predicted: <b style='color:green'>PRAWDA</b>")
+    odswiez_ekran()
+
+def pokaz_falsz():  
+    st.session_state.historia_detekcji.append("❌ Predicted: <b style='color:red'>FAŁSZ</b>")
+    odswiez_ekran()
+
+actions = {
+    "prawda": {"function": pokaz_prawde, "cooldown": 2.0}, 
+    "falsz": {"function": pokaz_falsz, "cooldown": 2.0}
+}
+
 def get_webrtc_stream(ctx, sr=16000):
     resampler = av.AudioResampler(format='flt', layout='mono', rate=sr)
     while ctx.state.playing:
@@ -61,12 +80,9 @@ def get_webrtc_stream(ctx, sr=16000):
             if ctx.audio_receiver is None:
                 frames = []
             else:
-                frames = ctx.audio_receiver.get_frames(timeout=0.05)
+                frames = ctx.audio_receiver.get_frames(timeout=0.0)
         except queue.Empty:
             frames = []
-            
-        if len(frames) > 30:
-            frames = frames[-30:]
             
         clean_audio = []
         for frame in frames:
@@ -137,41 +153,14 @@ def timed_webrtc_stream(ctx, ekran_statusu, timeout=10.0, sr=16000):
 
 if mode == "🎙️ Przetestuj Model":
     if not webrtc_ctx.state.playing:
-        st.warning("⚠️ Zanim przejdziesz dalej, musisz włączyć mikrofon klikając przycisk START powyżej.")
+        st.warning("⚠️ Najpierw uruchom mikrofon przyciskiem START na górze ekranu.")
     else:
-        if "test_started" not in st.session_state:
-            st.session_state.test_started = False
-            
-        if not st.session_state.test_started:
-            if st.button("▶️ Rozpocznij Testowanie Modelu na żywo", type="primary"):
-                st.session_state.test_started = True
-                st.rerun()
-        else:
+        st.info("Pamiętaj: Testowanie działa w nieskończonej pętli. Aby zmienić zakładkę bez wizualnych błędów, zatrzymaj mikrofon lub odśwież stronę po testach.")
+        if st.button("▶️ Rozpocznij Testowanie Modelu na żywo", type="primary"):
             st.success("Nasłuchiwanie aktywne...")
-            
-            ekran_logow = st.empty()
-            def odswiez_ekran():
-                ostatnie_logi = st.session_state.historia_detekcji[-10:]
-                ekran_logow.markdown("<br>".join(ostatnie_logi), unsafe_allow_html=True)
-
-            def pokaz_prawde(): 
-                st.session_state.historia_detekcji.append("✅ Predicted: <b style='color:green'>PRAWDA</b>")
-                odswiez_ekran()
-
-            def pokaz_falsz():  
-                st.session_state.historia_detekcji.append("❌ Predicted: <b style='color:red'>FAŁSZ</b>")
-                odswiez_ekran()
-
-            test_actions = {
-                "prawda": {"function": pokaz_prawde, "cooldown": 2.0}, 
-                "falsz": {"function": pokaz_falsz, "cooldown": 2.0}
-            }
-            
-            odswiez_ekran()
-            
             engine = Engine()
             audio_source = get_webrtc_stream(webrtc_ctx)
-            engine.listen("prawda_falsz", actions=test_actions, source=audio_source)
+            engine.listen("prawda_falsz", actions=actions, source=audio_source)
 
 elif mode == "🎮 Zagraj w Quiz":
     st.subheader("🪐 Kosmiczny Quiz Głosowy AI")
@@ -280,26 +269,16 @@ elif mode == "🎮 Zagraj w Quiz":
 
 else:
     st.markdown("### Panel Administracyjny (Crowdsourcing)")
-    if not webrtc_ctx.state.playing:
-        st.warning("⚠️ Zanim przejdziesz dalej, musisz włączyć mikrofon klikając przycisk START powyżej.")
-    else:
-        if not st.session_state.is_recording:
-            haslo = st.text_input("Hasło administracyjne:", type="password")
-            
-            try:
-                oczekiwane_haslo = st.secrets["ADMIN_PASS"]
-            except Exception:
-                oczekiwane_haslo = "dev123"
-                
-            if haslo == oczekiwane_haslo:
-                if st.button("▶️ Rozpocznij automatyczną sesję dodawania próbek", type="primary"):
-                    st.session_state.is_recording = True
-                    st.rerun()
-            elif haslo:
-                st.error("Nieprawidłowe hasło!")
-        else:
-            st.success("Sesja nagrywania aktywna. Wykonuj polecenia z ekranu...")
-            
+    haslo = st.text_input("Hasło administracyjne:", type="password")
+    
+    try:
+        oczekiwane_haslo = st.secrets["ADMIN_PASS"]
+    except Exception:
+        oczekiwane_haslo = "dev123"
+        
+    if haslo == oczekiwane_haslo:
+        
+        if webrtc_ctx.state.playing:
             engine = Engine()
             audio_source = get_webrtc_stream(webrtc_ctx)
             
@@ -356,7 +335,7 @@ else:
                 if webrtc_ctx.audio_receiver:
                     try:
                         while True:
-                            webrtc_ctx.audio_receiver.get_frames(timeout=0.05)
+                            webrtc_ctx.audio_receiver.get_frames(timeout=0.0)
                     except queue.Empty:
                         pass
 
@@ -411,15 +390,32 @@ else:
                     pass
                     time.sleep(2)
 
-            engine.record(
-                target=zapisz_i_wyslij,
-                classes=["prawda", "falsz"],
-                samples=2,
-                actions=moje_akcje,
-                source=audio_source,
-                duration=3.0
-            )
-            ekran.success("✅ Koniec sesji! Wszystko wysłane.")
-            st.session_state.is_recording = False
-            time.sleep(2.0)
-            st.rerun()
+            if not st.session_state.is_recording:
+                if st.button("Rozpocznij automatyczną sesję (4 próbki)"):
+                    st.session_state.is_recording = True
+                    st.rerun()
+            else:
+                engine.record(
+                    target=zapisz_i_wyslij,
+                    classes=["prawda", "falsz"],
+                    samples=2,
+                    actions=moje_akcje,
+                    source=audio_source,
+                    duration=3.0
+                )
+                ekran.success("✅ Koniec sesji! Wszystko wysłane.")
+                st.session_state.is_recording = False
+                
+            if not st.session_state.is_recording:
+                while webrtc_ctx.state.playing:
+                    try:
+                        if webrtc_ctx.audio_receiver:
+                            webrtc_ctx.audio_receiver.get_frames(timeout=0.1)
+                    except queue.Empty:
+                        pass
+                    time.sleep(0.05)
+        else:
+            st.info("👆 Uruchom mikrofon (przycisk START na górze), aby rozpocząć nagrywanie próbek.")
+                
+    elif haslo != "":
+        st.error("Błędne hasło!")
