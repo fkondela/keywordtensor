@@ -1,6 +1,6 @@
 torch
 torchaudio
-gradio==4.44.1
+gradio
 numpy
 faker
 onnxruntime
@@ -9,5 +9,3 @@ audioop-lts
 huggingface_hub==0.23.4
 torchcodec
 pydantic
-starlette<0.40.0
-fastapi<0.113.0
