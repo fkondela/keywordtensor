@@ -67,3 +67,5 @@ jobs:
         with:
           app-name: 'keywordtensor'
           slot-name: 'Production'
+          package: .
+          clean: true
