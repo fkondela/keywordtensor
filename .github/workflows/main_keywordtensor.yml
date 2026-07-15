@@ -30,7 +30,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libjpeg-dev zlib1g-dev libpng-dev
           pip install --upgrade pip
-          pip install -r demo/requirements.txt --target=".python_packages/lib/site-packages"
+          pip install -r demo/requirements.txt --target="python_packages/lib/site-packages"
           
       - name: Prepare Azure configuration
         run: cp demo/requirements.txt requirements.txt
