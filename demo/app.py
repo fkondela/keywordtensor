@@ -1,6 +1,8 @@
 import os
 import time
 import random
+import sys
+sys.path.insert(0, "/home/site/wwwroot/.python_packages/lib/site-packages")
 import gradio as gr
 import numpy as np
 import torchaudio
