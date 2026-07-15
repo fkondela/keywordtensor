@@ -184,7 +184,7 @@ class Engine:
             )
 
 
-    def listen(self, model_name, actions=None, min_confidence=0.6, n_averages=3, source="microphone"):
+    def listen(self, model_name, actions=None, min_confidence=0.6, n_averages=3, source="microphone", listen_time=0):
         
         if actions is None:
             actions = {}
@@ -220,6 +220,22 @@ class Engine:
         audio_buffer = deque([0.0] * buf_len, maxlen=buf_len)
         prediction_history = deque(maxlen=n_averages)
         last_trigger_times = {}
+        
+        if listen_time == -1:
+            wav_tensor = torch.tensor(source, dtype=torch.float32)
+            if len(wav_tensor) > buf_len:
+                wav_tensor = wav_tensor[-buf_len:]
+            elif len(wav_tensor) < buf_len:
+                wav_tensor = torch.nn.functional.pad(wav_tensor, (0, buf_len - len(wav_tensor)))
+                
+            spectrogram = wav_to_spec.encodes(wav_tensor)
+            spectrogram = normalize_spec.encodes(spectrogram)
+            onnx_data = spectrogram.unsqueeze(0).unsqueeze(0).numpy()
+            
+            logits = sess.run(None, {inp_name: onnx_data})[0][0]
+            exp_res = np.exp(logits - np.max(logits))
+            probs = exp_res / exp_res.sum()
+            return {label: float(prob) for label, prob in zip(labels, probs)}
 
         def _run_inference(current_buffer, current_sr):
             wav_tensor = torch.tensor(current_buffer, dtype=torch.float32)
@@ -292,8 +308,12 @@ class Engine:
                 raise ValueError("Source must be 'microphone' or an iterable/generator of audio samples.")
             iterator_source = iter(source)
 
+        start_time = time.time()
         try:
             while True:
+                if listen_time > 0 and (time.time() - start_time) >= listen_time:
+                    break
+                
                 active_sr = None
                 
                 if is_mic:

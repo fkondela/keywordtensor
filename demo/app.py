@@ -1,244 +1,249 @@
-import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-import streamlit as st
-from streamlit_webrtc import webrtc_streamer, RTCConfiguration, WebRtcMode
-from keywordtensor.core import Engine
-import av
-import queue
 import time
-import torchaudio
 import random
-import json
+import gradio as gr
+import numpy as np
+import torchaudio
+import torch
+import sys
+import queue
+import threading
 from faker import Faker
-import os
-from twilio.rest import Client
 
-st.set_page_config(page_title="KeywordTensor Web", layout="wide")
-st.title("KeywordTensor - prawda_falsz model")
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from keywordtensor.core import Engine
 
-@st.cache_data
-def get_ice_servers():
-    account_sid = st.secrets["TWILIO_ACCOUNT_SID"]
-    auth_token = st.secrets["TWILIO_AUTH_TOKEN"]
+engine = Engine()
+fake = Faker('pl_PL')
 
-    client = Client(account_sid, auth_token)
-    token = client.tokens.create()
-    return token.ice_servers
+audio_queues = {}
 
-mode = st.radio("Tryb aplikacji:", ["🎙️ Przetestuj Model", "🛠️ Dodaj Próbki (Admin)"], horizontal=True)
-
-webrtc_ctx = webrtc_streamer(
-    key="speech-to-text",
-    mode=WebRtcMode.SENDONLY,
-    audio_receiver_size=256,
-    rtc_configuration={"iceServers": get_ice_servers()},
-    media_stream_constraints={"video": False, "audio": True},
-    async_processing=True,
-)
-
-if "historia_detekcji" not in st.session_state:
-    st.session_state.historia_detekcji = []
-
-ekran_logow = st.empty()
-
-def odswiez_ekran():
-    ostatnie_logi = st.session_state.historia_detekcji[-10:]
-    ekran_logow.markdown("<br>".join(ostatnie_logi), unsafe_allow_html=True)
-
-def pokaz_prawde(): 
-    st.session_state.historia_detekcji.append("✅ Predicted: <b style='color:green'>PRAWDA</b>")
-    odswiez_ekran()
-
-def pokaz_falsz():  
-    st.session_state.historia_detekcji.append("❌ Predicted: <b style='color:red'>FAŁSZ</b>")
-    odswiez_ekran()
-
-actions = {
-    "prawda": {"function": pokaz_prawde, "cooldown": 2.0}, 
-    "falsz": {"function": pokaz_falsz, "cooldown": 2.0}
-}
-
-def get_webrtc_stream(ctx, sr=16000):
-    resampler = av.AudioResampler(format='flt', layout='mono', rate=sr)
-    while ctx.state.playing:
-        try:
-            if ctx.audio_receiver is None:
-                frames = []
-            else:
-                frames = ctx.audio_receiver.get_frames(timeout=0.0)
-        except queue.Empty:
-            frames = []
-            
-        clean_audio = []
-        for frame in frames:
-            for clean_frame in resampler.resample(frame):
-                clean_audio.extend(clean_frame.to_ndarray()[0].tolist())
-                
-        if clean_audio:
-            yield clean_audio
-        else:
-            yield None
-
-if "is_recording" not in st.session_state:
-    st.session_state.is_recording = False
-
-if mode == "🎙️ Przetestuj Model":
-    if webrtc_ctx.state.playing:
-        engine = Engine()
-        audio_source = get_webrtc_stream(webrtc_ctx)
-        engine.listen("prawda_falsz", actions=actions, source=audio_source)
-
-else:
-    st.markdown("### Panel Administracyjny (Crowdsourcing)")
-    haslo = st.text_input("Hasło administracyjne:", type="password")
+def process_stream_detect(new_audio_chunk, state_buffer, model_name):
+    if new_audio_chunk is None:
+        return "Nasłuchuję...", state_buffer
+        
+    sr, y = new_audio_chunk
+    if y.dtype != np.float32:
+        y = y.astype(np.float32) / 32768.0
+    if len(y.shape) > 1:
+        y = np.mean(y, axis=1)
+        
+    state_buffer = np.concatenate([state_buffer, y])
+    max_len = int(sr * 3.0)
+    state_buffer = state_buffer[-max_len:]
     
-    try:
-        oczekiwane_haslo = st.secrets["ADMIN_PASS"]
-    except Exception:
-        oczekiwane_haslo = "dev123"
+    wyniki = engine.listen(model_name, source=state_buffer.tolist(), listen_time=-1)
+    
+    if wyniki:
+        najlepsza_klasa = max(wyniki, key=wyniki.get)
+        if wyniki[najlepsza_klasa] > 0.6 and najlepsza_klasa != "other":
+            kolor = "green" if najlepsza_klasa == "prawda" else "red"
+            return f"<h2>🔥 Wykryto: <span style='color:{kolor}'>{najlepsza_klasa.upper()}</span> ({wyniki[najlepsza_klasa]:.2f})</h2>", state_buffer
+    
+    return "<h2>Nasłuchuję...</h2>", state_buffer
+
+
+def process_admin_stream(new_audio_chunk, request: gr.Request):
+    if new_audio_chunk is not None:
+        sr, y = new_audio_chunk
+        if y.dtype != np.float32:
+            y = y.astype(np.float32) / 32768.0
+        if len(y.shape) > 1:
+            y = np.mean(y, axis=1)
+            
+        session_hash = request.session_hash
+        if session_hash not in audio_queues:
+            audio_queues[session_hash] = queue.Queue()
+        audio_queues[session_hash].put(y.tolist())
+    return None
+
+def get_audio_stream(session_hash):
+    q = audio_queues.get(session_hash)
+    while True:
+        if q is None:
+            yield None
+            time.sleep(0.1)
+            continue
+        try:
+            chunk = q.get(timeout=1.0)
+            if chunk == "STOP":
+                break
+            yield chunk
+        except queue.Empty:
+            pass
+
+def automatic_session_gradio(haslo, request: gr.Request):
+    oczekiwane_haslo = os.environ.get("ADMIN_PASS", "dev123")
+    if haslo != oczekiwane_haslo:
+        yield "<h3>❌ Błędne hasło!</h3>"
+        return
         
-    if haslo == oczekiwane_haslo:
+    session_hash = request.session_hash
+    if session_hash not in audio_queues:
+        audio_queues[session_hash] = queue.Queue()
         
-        if webrtc_ctx.state.playing:
-            engine = Engine()
-            audio_source = get_webrtc_stream(webrtc_ctx)
-            
-            ekran = st.empty()
-            
-            WLASNE_SLOWA = [
-                "prawie", "prawo", "prawnik", "sprawdzam", "sprawa",
-                "fauna", "fala", "fałda", "farsz", "flaszka",
-                "pradawny", "falsyfikat", "szum", "wdowa", "owca",
-                "trawa", "brawa", "wada", "rada", "praca", "prasa", "pstrąg", "broda", "fraza",
-                "klosz", "masz", "nasz", "plusz", "gulasz", "fakt", "fart", "kosz",
-                "jeden", "dwa", "trzy", "cztery", "pięć", "sześć", "siedem", "osiem", "dziewięć", "dziesięć",
-                "biały", "czarny", "czerwony", "zielony", "niebieski", "żółty", "szary",
-                "dom", "drzewo", "auto", "rzeka", "krzesło", "ekran", "telefon", "woda", "słońce", "chmura", 
-                "ptak", "okno", "drzwi", "książka", "lampa", "biurko", "kubek", "buty", "szkoła", "ulica"
-            ]
-            
-            fake = Faker('pl_PL')
-            ZAKAZANE_SLOWA = ["prawda", "fałsz", "falsz", "prawdę", "prawde"]
-
-            def bezpieczne_slowo():
-                if random.random() < 0.35:
-                    return random.choice(WLASNE_SLOWA)
-                else:
-                    while True:
-                        slowo = fake.word().lower()
-                        if slowo not in ZAKAZANE_SLOWA:
-                            return slowo
-            
-            def wyznacz_czasy(liczba_elementow):
-                if liczba_elementow == 0: return []
-                while True:
-                    czasy = [random.uniform(0.1, 1.8) for _ in range(liczba_elementow)]
-                    czasy.sort()
-                    if liczba_elementow == 1: return czasy
-                    if all(czasy[i] - czasy[i-1] >= 0.65 for i in range(1, liczba_elementow)):
-                        return czasy
-
-            def zbuduj_timeline(klasa):
-                elementy = []
-                L = random.choice([2, 3]) if klasa != "other" else random.choice([1, 2, 3])
-                czasy = wyznacz_czasy(L)
-                for t in czasy:
-                    elementy.append({"start": t, "tekst": bezpieczne_slowo(), "odczytane": False, "docelowe": False})
-                        
-                if klasa in ["prawda", "falsz"] and L > 0:
-                    idx_komendy = random.randint(0, L - 1)
-                    elementy[idx_komendy]["tekst"] = "PRAWDA" if klasa == "prawda" else "FAŁSZ"
-                    elementy[idx_komendy]["docelowe"] = True
-                
-                return elementy
-            
-            def clear_queue():
-                if webrtc_ctx.audio_receiver:
-                    try:
-                        while True:
-                            webrtc_ctx.audio_receiver.get_frames(timeout=0.0)
-                    except queue.Empty:
-                        pass
-
-            def tworz_akcje(klasa):
-                def akcja(start_callback):
-                    clear_queue()
-                    timeline = zbuduj_timeline(klasa)
-                    
-                    plan_str = " | ".join([f"**[{z['start']:.1f}s]** {z['tekst']}" for z in timeline])
-                    ekran.info(f"📘 **Plan słów na to nagranie (zapoznaj się przez 5 sekund):**\n\n{plan_str}")
-                    time.sleep(5.0)
-                    
-                    for i in [3, 2, 1]:
-                        ekran.warning(f"⏳ Start za {i}...")
-                        time.sleep(1.0)
-                        
-                    start_callback()
-                    start_nagrania = time.time()
-                    
-                    while (t := time.time() - start_nagrania) < 3.0:
-                        for z in timeline:
-                            if not z["odczytane"] and t >= z["start"]:
-                                if z["docelowe"]:
-                                    ekran.error(f"🔴 MÓW: **{z['tekst']}**")
-                                else:
-                                    ekran.warning(f"⚪ MÓW: {z['tekst']}")
-                                z["odczytane"] = True
-                        time.sleep(0.05)
-                        
-                    ekran.success("✅ Nagrywanie zakończone! Trwa wysyłanie...")
-                return akcja
-
-            moje_akcje = {
-                "prawda": tworz_akcje("prawda"),
-                "falsz": tworz_akcje("falsz")
-            }
-
-            def zapisz_i_wyslij(klasa, index, tensor_data, sr):
-                torchaudio.save("temp.wav", tensor_data, sr)
-                
-                try:
-                    from huggingface_hub import HfApi
-                    api = HfApi(token=st.secrets["HF_TOKEN"])
-                    baza_nazwy = f"{klasa}/probka_{int(time.time())}_{random.randint(1000, 9999)}_{index}"
-                    api.upload_file(
-                        path_or_fileobj="temp.wav",
-                        path_in_repo=f"{baza_nazwy}.wav",
-                        repo_id="fkondela/KeywordTensor_prawda_falsz", 
-                        repo_type="dataset"
-                    )
-                except Exception as e:
-                    pass
-                    time.sleep(2)
-
-            if not st.session_state.is_recording:
-                if st.button("Rozpocznij automatyczną sesję (4 próbki)"):
-                    st.session_state.is_recording = True
-                    st.rerun()
-            else:
-                engine.record(
-                    target=zapisz_i_wyslij,
-                    classes=["prawda", "falsz"],
-                    samples=2,
-                    actions=moje_akcje,
-                    source=audio_source,
-                    duration=3.0
-                )
-                ekran.success("✅ Koniec sesji! Wszystko wysłane.")
-                st.session_state.is_recording = False
-                
-            if not st.session_state.is_recording:
-                while webrtc_ctx.state.playing:
-                    try:
-                        if webrtc_ctx.audio_receiver:
-                            webrtc_ctx.audio_receiver.get_frames(timeout=0.1)
-                    except queue.Empty:
-                        pass
-                    time.sleep(0.05)
+    ui_queue = queue.Queue()
+    
+    while not audio_queues[session_hash].empty():
+        audio_queues[session_hash].get()
+        
+    ZAKAZANE_SLOWA = ["prawda", "fałsz", "falsz", "prawdę", "prawde"]
+    WLASNE_SLOWA = ["prawie", "prawo", "prawnik", "sprawdzam", "sprawa", "fauna", "fala", "szum", "wdowa", "owca"]
+    
+    def bezpieczne_slowo():
+        if random.random() < 0.35:
+            return random.choice(WLASNE_SLOWA)
         else:
-            st.info("👆 Uruchom mikrofon (przycisk START na górze), aby rozpocząć nagrywanie próbek.")
+            while True:
+                slowo = fake.word().lower()
+                if slowo not in ZAKAZANE_SLOWA:
+                    return slowo
+                    
+    def wyznacz_czasy(liczba_elementow):
+        if liczba_elementow == 0: return []
+        while True:
+            czasy = [random.uniform(0.1, 1.8) for _ in range(liczba_elementow)]
+            czasy.sort()
+            if liczba_elementow == 1: return czasy
+            if all(czasy[i] - czasy[i-1] >= 0.65 for i in range(1, liczba_elementow)):
+                return czasy
+
+    def zbuduj_timeline(klasa):
+        elementy = []
+        L = random.choice([2, 3]) if klasa != "other" else random.choice([1, 2, 3])
+        czasy = wyznacz_czasy(L)
+        for t in czasy:
+            elementy.append({"start": t, "tekst": bezpieczne_slowo(), "odczytane": False, "docelowe": False})
                 
-    elif haslo != "":
-        st.error("Błędne hasło!")
+        if klasa in ["prawda", "falsz"] and L > 0:
+            idx_komendy = random.randint(0, L - 1)
+            elementy[idx_komendy]["tekst"] = "PRAWDA" if klasa == "prawda" else "FAŁSZ"
+            elementy[idx_komendy]["docelowe"] = True
+        return elementy
+
+    def tworz_akcje(klasa):
+        def akcja(start_callback):
+            while not audio_queues[session_hash].empty():
+                audio_queues[session_hash].get()
+                
+            timeline = zbuduj_timeline(klasa)
+            plan_str = " | ".join([f"**[{z['start']:.1f}s]** {z['tekst']}" for z in timeline])
+            ui_queue.put(f"<h3>📘 Plan słów (zapoznaj się przez 5s):</h3><p>{plan_str}</p>")
+            time.sleep(5.0)
+            
+            for i in [3, 2, 1]:
+                ui_queue.put(f"<h3>⏳ Start za {i}...</h3>")
+                time.sleep(1.0)
+                
+            start_callback()
+            start_nagrania = time.time()
+            
+            while (t := time.time() - start_nagrania) < 3.0:
+                html_out = ""
+                for z in timeline:
+                    if not z["odczytane"] and t >= z["start"]:
+                        if z["docelowe"]:
+                            html_out = f"<h2>🔴 MÓW: <span style='color:red'>{z['tekst']}</span></h2>"
+                        else:
+                            html_out = f"<h2>⚪ MÓW: {z['tekst']}</h2>"
+                        z["odczytane"] = True
+                if html_out:
+                    ui_queue.put(html_out)
+                time.sleep(0.05)
+                
+            ui_queue.put("<h3>✅ Nagrywanie zakończone! Trwa wysyłanie...</h3>")
+        return akcja
+
+    moje_akcje = {
+        "prawda": tworz_akcje("prawda"),
+        "falsz": tworz_akcje("falsz")
+    }
+
+    def zapisz_i_wyslij(klasa, index, tensor_data, sr):
+        torchaudio.save("temp.wav", tensor_data, sr)
+        try:
+            from huggingface_hub import HfApi
+            hf_token = os.environ.get("HF_TOKEN")
+            if not hf_token:
+                ui_queue.put("<h3>❌ Brak tokenu HF_TOKEN!</h3>")
+                return
+            api = HfApi(token=hf_token)
+            baza_nazwy = f"{klasa}/probka_{int(time.time())}_{random.randint(1000, 9999)}_{index}"
+            api.upload_file(
+                path_or_fileobj="temp.wav",
+                path_in_repo=f"{baza_nazwy}.wav",
+                repo_id="fkondela/KeywordTensor_prawda_falsz", 
+                repo_type="dataset"
+            )
+            ui_queue.put(f"<h3>✅ Próbka dla {klasa} wysłana na serwer!</h3>")
+            time.sleep(2.0)
+        except Exception as e:
+            ui_queue.put(f"<h3>❌ Błąd wysyłania: {str(e)}</h3>")
+            time.sleep(2.0)
+
+    def run_engine():
+        engine.record(
+            target=zapisz_i_wyslij,
+            classes=["prawda", "falsz"],
+            samples=2,
+            actions=moje_akcje,
+            source=get_audio_stream(session_hash),
+            duration=3.0
+        )
+        ui_queue.put("ZAKONCZONO")
+
+    t = threading.Thread(target=run_engine)
+    t.start()
+
+    ostatni_tekst = "<h3>Rozpoczynamy sesję...</h3>"
+    yield ostatni_tekst
+    
+    while t.is_alive() or not ui_queue.empty():
+        try:
+            msg = ui_queue.get(timeout=0.1)
+            if msg == "ZAKONCZONO":
+                break
+            ostatni_tekst = msg
+            yield ostatni_tekst
+        except queue.Empty:
+            pass
+
+    yield "<h3>✅ Koniec sesji automatycznej! Dziękujemy.</h3>"
+
+
+theme = gr.themes.Soft(primary_hue="blue", secondary_hue="indigo")
+
+with gr.Blocks(theme=theme, title="KeywordTensor Web") as demo:
+    gr.Markdown("# 🎙️ KeywordTensor - Wersja Chmurowa (Gradio)")
+    
+    with gr.Tab("Live Streaming (Detekcja)"):
+        gr.Markdown("Włącz mikrofon i powiedz **'prawda'** lub **'fałsz'**.")
+        model_dropdown = gr.Dropdown(choices=["prawda_falsz"], value="prawda_falsz", label="Aktywny Model ONNX")
+        user_buffer = gr.State(value=np.array([], dtype=np.float32))
+        
+        with gr.Row():
+            audio_in = gr.Audio(sources=["microphone"], streaming=True, label="Twój Mikrofon")
+            wynik_out = gr.HTML("<h2>Zacznij mówić...</h2>")
+            
+        audio_in.stream(fn=process_stream_detect, inputs=[audio_in, user_buffer, model_dropdown], outputs=[wynik_out, user_buffer])
+        
+    with gr.Tab("🛠️ Crowdsourcing Próbek (Admin)"):
+        gr.Markdown("Zostaw włączony mikrofon i naciśnij Start. Aplikacja przeprowadzi Cię przez sesję automatycznie tak jak stara wersja.")
+        
+        with gr.Row():
+            haslo_input = gr.Textbox(label="Hasło Administracyjne", type="password")
+            
+        admin_audio_in = gr.Audio(sources=["microphone"], streaming=True, label="Utrzymuj mikrofon włączony!")
+        start_btn = gr.Button("🚀 Rozpocznij automatyczną sesję (4 próbki)", variant="primary")
+        ekran_admina = gr.HTML("<h3>Oczekuję...</h3>")
+        
+        admin_audio_in.stream(fn=process_admin_stream, inputs=[admin_audio_in], outputs=[])
+        
+        start_btn.click(
+            fn=automatic_session_gradio,
+            inputs=[haslo_input],
+            outputs=[ekran_admina]
+        )
+
+if __name__ == "__main__":
+    demo.launch(server_name="0.0.0.0", server_port=8000)

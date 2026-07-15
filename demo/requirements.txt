@@ -1,15 +1,9 @@
-streamlit>=1.35.0
-streamlit-webrtc
+gradio>=4.0.0
+faker
 torch
 torchaudio
 onnxruntime
 numpy
-# force reboot
 huggingface_hub==0.23.4
 soundfile
 torchcodec
-
-faker==25.8.0
-
-twilio
-gTTS
