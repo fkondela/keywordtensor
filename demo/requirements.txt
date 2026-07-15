@@ -8,6 +8,6 @@ soundfile
 audioop-lts
 huggingface_hub==0.23.4
 torchcodec
-pydantic<2.9.0
+pydantic
 starlette<0.40.0
 fastapi<0.113.0
