@@ -1,7 +1,26 @@
 import os
+import sys
 import time
 import random
-import sys
+
+print("=== DEBUGGING AZURE DISK ===")
+print("Current sys.path:", sys.path)
+print("Contents of /home/site/wwwroot:")
+try:
+    print(os.listdir("/home/site/wwwroot"))
+except Exception as e:
+    print("Error listing root:", e)
+
+print("Contents of /home/site/wwwroot/python_packages:")
+try:
+    print(os.listdir("/home/site/wwwroot/python_packages"))
+    print("Contents of /home/site/wwwroot/python_packages/lib/site-packages:")
+    print(os.listdir("/home/site/wwwroot/python_packages/lib/site-packages")[:20]) # First 20 items
+except Exception as e:
+    print("Error listing python_packages:", e)
+
+print("============================")
+
 sys.path.insert(0, "/home/site/wwwroot/python_packages/lib/site-packages")
 import gradio as gr
 import numpy as np
