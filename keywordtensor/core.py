@@ -126,8 +126,6 @@ class NormalizeSpec(Transform):
         #return AudioSpectrogram(denormalized)
         
 
-_ONNX_SESSIONS = {}
-
 #klasa gdy ktos chce trenowac swoj wlasny model, a nie korzystac z wbudowanych wytrenowanych przykladow 
 class Engine:
     def __init__(self):
@@ -186,7 +184,7 @@ class Engine:
             )
 
 
-    def listen(self, model_name, actions=None, min_confidence=0.6, n_averages=3, source="microphone", listen_duration=0.0):
+    def listen(self, model_name, actions=None, min_confidence=0.6, n_averages=3, source="microphone"):
         
         if actions is None:
             actions = {}
@@ -215,10 +213,7 @@ class Engine:
         wav_to_spec = WaveformToSpectrogram(sr=sr)
         normalize_spec = NormalizeSpec(mean=cfg["mean"], std=cfg["std"])
         
-        onnx_path = f"{resolved_path}.onnx"
-        if onnx_path not in _ONNX_SESSIONS:
-            _ONNX_SESSIONS[onnx_path] = ort.InferenceSession(onnx_path)
-        sess = _ONNX_SESSIONS[onnx_path]
+        sess = ort.InferenceSession(f"{resolved_path}.onnx")
         inp_name = sess.get_inputs()[0].name
         
         buf_len = int(sr * duration)
@@ -297,12 +292,8 @@ class Engine:
                 raise ValueError("Source must be 'microphone' or an iterable/generator of audio samples.")
             iterator_source = iter(source)
 
-        start_time = time.time()
         try:
             while True:
-                if listen_duration > 0.0 and (time.time() - start_time) > listen_duration:
-                    break
-                    
                 active_sr = None
                 
                 if is_mic:
