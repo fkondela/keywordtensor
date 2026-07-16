@@ -11,3 +11,4 @@ audioop-lts
 huggingface_hub
 torchcodec
 pydantic
+av
