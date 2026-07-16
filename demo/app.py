@@ -10,21 +10,6 @@ import sys
 import queue
 import threading
 from faker import Faker
-import gradio_client.utils as client_utils
-
-# Monkey-patch naprawiający błąd boolean schema w starszych wersjach (zabezpieczony przed zmianami w Gradio 5)
-try:
-    oryginalny_get_type = client_utils.get_type
-
-    def patched_get_type(schema):
-        if isinstance(schema, bool):
-            return "boolean"
-        return oryginalny_get_type(schema)
-
-    client_utils.get_type = patched_get_type
-except AttributeError:
-    # W nowym Gradio funkcja mogła zostać przeniesiona lub usunięta - zakładamy, że błąd bool jest już naprawiony
-    pass
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from keywordtensor.core import Engine
