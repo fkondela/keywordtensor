@@ -331,7 +331,6 @@ class Engine:
                         break
                 
                 if active_sr and len(audio_buffer) >= int(active_sr * duration):
-                    import time
                     current_time = time.time()
                     if current_time - last_inference_time >= 0.5:
                         current_buffer = list(audio_buffer)[-int(active_sr * duration):]

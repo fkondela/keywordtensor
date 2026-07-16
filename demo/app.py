@@ -232,7 +232,15 @@ def admin_mode_generator(haslo, request: gr.Request):
     }
 
     def zapisz_i_wyslij(klasa, index, tensor_data, sr):
-        torchaudio.save("/tmp/temp.wav", tensor_data, sr)
+        import wave
+        import numpy as np
+        audio_np = tensor_data.squeeze().numpy()
+        audio_np = (audio_np * 32767).clip(-32768, 32767).astype(np.int16)
+        with wave.open("/tmp/temp.wav", "w") as f:
+            f.setnchannels(1)
+            f.setsampwidth(2)
+            f.setframerate(sr)
+            f.writeframes(audio_np.tobytes())
         try:
             from huggingface_hub import HfApi
             hf_token = os.environ.get("HF_TOKEN")
@@ -292,7 +300,7 @@ def admin_mode_generator(haslo, request: gr.Request):
     if not error_occurred:
         yield "<h3>✅ Koniec sesji.</h3>"
 
-with gr.Blocks(title="KeywordTensor Web", theme=gr.themes.Soft()) as demo:
+with gr.Blocks(title="KeywordTensor Web") as demo:
     gr.Markdown("# 🎙️ KeywordTensor - Wersja Chmurowa")
     
     with gr.Accordion("👆 Krok 1: Kliknij 'Record', aby aktywować mikrofon", open=True) as mic_accordion:
@@ -376,4 +384,4 @@ with gr.Blocks(title="KeywordTensor Web", theme=gr.themes.Soft()) as demo:
     )
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=8000)
+    demo.launch(server_name="0.0.0.0", server_port=8000, theme=gr.themes.Soft())
