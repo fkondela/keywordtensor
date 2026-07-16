@@ -243,15 +243,19 @@ def admin_mode_generator(haslo, request: gr.Request):
             ui_queues[session_hash].put(f"<h3>❌ Błąd: {str(e)}</h3>")
 
     def thread_func():
-        engine.record(
-            target=zapisz_i_wyslij,
-            classes=["prawda", "falsz"],
-            samples=2,
-            actions=moje_akcje,
-            source=get_session_audio_record(session_hash),
-            duration=3.0
-        )
-        ui_queues[session_hash].put("ZAKONCZONO")
+        try:
+            engine.record(
+                target=zapisz_i_wyslij,
+                classes=["prawda", "falsz"],
+                samples=2,
+                actions=moje_akcje,
+                source=get_session_audio_record(session_hash),
+                duration=3.0
+            )
+            ui_queues[session_hash].put("ZAKONCZONO")
+        except Exception as e:
+            ui_queues[session_hash].put(f"<h3>❌ BŁĄD SILNIKA (Record): {str(e)}</h3>")
+            ui_queues[session_hash].put("ZAKONCZONO")
 
     t = threading.Thread(target=thread_func)
     t.start()
