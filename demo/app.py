@@ -8,6 +8,7 @@ import collections
 import numpy as np
 import torch
 import torchaudio
+import torchaudio.transforms
 import gradio as gr
 from faker import Faker
 from keywordtensor.core import Engine
@@ -137,6 +138,9 @@ def live_mode_generator(request: gr.Request):
             try:
                 msg = ui_queues[session_hash].get(timeout=0.1)
                 yield msg
+                if "BŁĄD" in msg:
+                    is_live[session_hash] = False
+                    break
                 time.sleep(1.5)
                 yield "<h2>Nasłuchuję...</h2>"
             except queue.Empty:
@@ -345,13 +349,13 @@ with gr.Blocks(title="KeywordTensor Web") as demo:
         session = request.session_hash
         if session in is_live:
             is_live[session] = False
-        return gr.update(visible=True), gr.update(visible=False), gr.update(visible=False)
+        return gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(visible=True), gr.update(visible=True)
 
     btn_menu_live.click(nav_to_live, outputs=[menu_group, live_group])
     btn_menu_admin.click(nav_to_admin, outputs=[menu_group, admin_group])
     
-    btn_back_live.click(nav_back, outputs=[menu_group, live_group, admin_group])
-    btn_back_admin.click(nav_back, outputs=[menu_group, live_group, admin_group])
+    btn_back_live.click(nav_back, outputs=[menu_group, live_group, admin_group, btn_start_live, btn_start_admin])
+    btn_back_admin.click(nav_back, outputs=[menu_group, live_group, admin_group, btn_start_live, btn_start_admin])
     
     audio_in.stream(
         fn=handle_audio_stream,
@@ -359,11 +363,17 @@ with gr.Blocks(title="KeywordTensor Web") as demo:
     )
     
     btn_start_live.click(
+        fn=lambda: gr.update(visible=False),
+        outputs=[btn_start_live]
+    ).then(
         fn=live_mode_generator,
         outputs=[live_output]
     )
     
     btn_start_admin.click(
+        fn=lambda: gr.update(visible=False),
+        outputs=[btn_start_admin]
+    ).then(
         fn=admin_mode_generator,
         inputs=[admin_password],
         outputs=[admin_output]
