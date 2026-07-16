@@ -8,7 +8,7 @@ import numpy as np
 import torch
 import torchaudio
 import gradio as gr
-import av
+import audioop
 from faker import Faker
 from keywordtensor.core import Engine
 
@@ -44,19 +44,13 @@ def handle_audio_stream(chunk, request: gr.Request):
             y = np.mean(y, axis=1)
             
         if sr != 16000:
-            if session_hash not in session_resamplers:
-                session_resamplers[session_hash] = av.AudioResampler(format='flt', layout='mono', rate=16000)
+            y_int16 = (y * 32767.0).astype(np.int16)
+            state = session_resamplers.get(session_hash, None)
+            resampled_bytes, new_state = audioop.ratecv(y_int16.tobytes(), 2, 1, sr, 16000, state)
+            session_resamplers[session_hash] = new_state
             
-            y = y.reshape(1, -1)
-            frame = av.AudioFrame.from_ndarray(y, format='flt', layout='mono')
-            frame.sample_rate = sr
-            
-            resampler = session_resamplers[session_hash]
-            clean_audio = []
-            for clean_frame in resampler.resample(frame):
-                clean_audio.extend(clean_frame.to_ndarray()[0].tolist())
-            
-            audio_queues[session_hash].put(clean_audio)
+            y_resampled = np.frombuffer(resampled_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+            audio_queues[session_hash].put(y_resampled.tolist())
         else:
             audio_queues[session_hash].put(y.tolist())
 
@@ -77,8 +71,8 @@ def live_mode_generator(request: gr.Request):
         engine.listen(
             "prawda_falsz", 
             actions={
-                "prawda": {"function": prawda_cb, "cooldown": 2.0}, 
-                "falsz": {"function": falsz_cb, "cooldown": 2.0}
+                "prawda": {"function": prawda_cb, "cooldown": 3.0}, 
+                "falsz": {"function": falsz_cb, "cooldown": 3.0}
             }, 
             source=get_session_audio(session_hash)
         )
@@ -234,7 +228,7 @@ def admin_mode_generator(haslo, request: gr.Request):
 
 theme = gr.themes.Soft(primary_hue="blue", secondary_hue="indigo")
 
-with gr.Blocks(title="KeywordTensor Web", theme=theme) as demo:
+with gr.Blocks(title="KeywordTensor Web") as demo:
     gr.Markdown("# 🎙️ KeywordTensor - Wersja Chmurowa")
     
     with gr.Group(visible=True) as gate_group:
@@ -261,24 +255,24 @@ with gr.Blocks(title="KeywordTensor Web", theme=theme) as demo:
         admin_output = gr.HTML("<h3>Oczekuję na start...</h3>")
 
     audio_in.start_recording(
-        fn=lambda: (gr.update(visible=False), gr.update(visible=True)),
-        outputs=[gate_group, menu_group]
+        fn=lambda: gr.update(visible=True),
+        outputs=[menu_group]
     )
     
-    def nav_to_live(): return gr.update(visible=False), gr.update(visible=True)
-    def nav_to_admin(): return gr.update(visible=False), gr.update(visible=True)
+    def nav_to_live(): return gr.update(visible=False), gr.update(visible=False), gr.update(visible=True)
+    def nav_to_admin(): return gr.update(visible=False), gr.update(visible=False), gr.update(visible=True)
     
     def nav_back(request: gr.Request):
         session = request.session_hash
         if session in is_live:
             is_live[session] = False
-        return gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(visible=True), gr.update(visible=True)
+        return gr.update(visible=True), gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(visible=True), gr.update(visible=True)
 
-    btn_menu_live.click(nav_to_live, outputs=[menu_group, live_group])
-    btn_menu_admin.click(nav_to_admin, outputs=[menu_group, admin_group])
+    btn_menu_live.click(nav_to_live, outputs=[gate_group, menu_group, live_group])
+    btn_menu_admin.click(nav_to_admin, outputs=[gate_group, menu_group, admin_group])
     
-    btn_back_live.click(nav_back, outputs=[menu_group, live_group, admin_group, btn_start_live, btn_start_admin])
-    btn_back_admin.click(nav_back, outputs=[menu_group, live_group, admin_group, btn_start_live, btn_start_admin])
+    btn_back_live.click(nav_back, outputs=[gate_group, menu_group, live_group, admin_group, btn_start_live, btn_start_admin])
+    btn_back_admin.click(nav_back, outputs=[gate_group, menu_group, live_group, admin_group, btn_start_live, btn_start_admin])
     
     audio_in.stream(
         fn=handle_audio_stream,
