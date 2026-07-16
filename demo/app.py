@@ -11,7 +11,6 @@ import queue
 import threading
 from faker import Faker
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from keywordtensor.core import Engine
 
 engine = Engine()

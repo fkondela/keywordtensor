@@ -30,6 +30,7 @@ jobs:
           sudo apt-get install -y libjpeg-dev zlib1g-dev libpng-dev
           mkdir deploy_workspace
           cp -r demo/* deploy_workspace/
+          cp -r keywordtensor deploy_workspace/
           pip install --upgrade pip
           pip install -r deploy_workspace/requirements.txt --target="deploy_workspace/.python_packages/lib/site-packages"
           cd deploy_workspace
