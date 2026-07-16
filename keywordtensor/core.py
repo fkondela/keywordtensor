@@ -309,6 +309,7 @@ class Engine:
             iterator_source = iter(source)
 
         start_time = time.time()
+        last_inference_time = 0
         try:
             while True:
                 if listen_time > 0 and (time.time() - start_time) >= listen_time:
@@ -330,8 +331,12 @@ class Engine:
                         break
                 
                 if active_sr and len(audio_buffer) >= int(active_sr * duration):
-                    current_buffer = list(audio_buffer)[-int(active_sr * duration):]
-                    _run_inference(current_buffer, active_sr)
+                    import time
+                    current_time = time.time()
+                    if current_time - last_inference_time >= 0.5:
+                        current_buffer = list(audio_buffer)[-int(active_sr * duration):]
+                        _run_inference(current_buffer, active_sr)
+                        last_inference_time = current_time
                     
                 time.sleep(0.05)
         finally:
