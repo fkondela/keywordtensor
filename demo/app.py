@@ -213,7 +213,7 @@ def automatic_session_gradio(haslo, request: gr.Request):
 
 theme = gr.themes.Soft(primary_hue="blue", secondary_hue="indigo")
 
-with gr.Blocks(theme=theme, title="KeywordTensor Web") as demo:
+with gr.Blocks(title="KeywordTensor Web") as demo:
     gr.Markdown("# 🎙️ KeywordTensor - Wersja Chmurowa (Gradio)")
     
     with gr.Tab("Live Streaming (Detekcja)"):
@@ -246,4 +246,4 @@ with gr.Blocks(theme=theme, title="KeywordTensor Web") as demo:
         )
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=8000)
+    demo.launch(server_name="0.0.0.0", server_port=8000, theme=theme)
