@@ -24,32 +24,32 @@ jobs:
         with:
           python-version: '3.14'
 
-      # 🛠️ Local Build Section (Client-Side Build)
-      - name: Install dependencies directly into deployment folder
+      - name: Prepare strict deployment package
         run: |
           sudo apt-get update
           sudo apt-get install -y libjpeg-dev zlib1g-dev libpng-dev
+          mkdir deploy_workspace
+          cp -r demo/* deploy_workspace/
           pip install --upgrade pip
-          pip install -r demo/requirements.txt --target="python_packages/lib/site-packages"
-          
-      - name: Prepare Azure configuration
-        run: cp demo/requirements.txt requirements.txt
+          pip install -r deploy_workspace/requirements.txt --target="deploy_workspace/.python_packages/lib/site-packages"
+          cd deploy_workspace
+          zip -r ../release.zip .
                 
-      - name: Upload artifact for deployment jobs
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: python-app
-          path: .
+          path: release.zip
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
     permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
+      id-token: write
+      contents: read
 
     steps:
-      - name: Download artifact from build job
+      - name: Download artifact
         uses: actions/download-artifact@v4
         with:
           name: python-app
@@ -61,11 +61,9 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_ABBCFFA73C1D49ABACE5194221F23242 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_942815E023324E2980421C76571E43E6 }}
 
-      - name: 'Deploy to Azure Web App'
+      - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
-        id: deploy-to-webapp
         with:
           app-name: 'keywordtensor'
           slot-name: 'Production'
-          package: .
-          clean: true
+          package: release.zip
