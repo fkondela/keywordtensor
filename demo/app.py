@@ -364,7 +364,8 @@ with gr.Blocks(title="KeywordTensor Web") as demo:
     btn_start_live.click(
         fn=lambda: gr.update(visible=False),
         outputs=[btn_start_live]
-    ).then(
+    )
+    btn_start_live.click(
         fn=live_mode_generator,
         outputs=[live_output]
     )
@@ -372,7 +373,8 @@ with gr.Blocks(title="KeywordTensor Web") as demo:
     btn_start_admin.click(
         fn=lambda: gr.update(visible=False),
         outputs=[btn_start_admin]
-    ).then(
+    )
+    btn_start_admin.click(
         fn=admin_mode_generator,
         inputs=[admin_password],
         outputs=[admin_output]
