@@ -51,6 +51,7 @@ def get_session_audio_listen(session_hash):
 
 def get_session_audio_record(session_hash):
     q = audio_queues[session_hash]
+    audio_buffer_48k = []
     
     while is_live.get(session_hash, False):
         try:
@@ -59,16 +60,20 @@ def get_session_audio_record(session_hash):
                 break
                 
             sr, y_chunk = chunk_tuple
+            audio_buffer_48k.extend(y_chunk)
             
-            if sr != 16000:
-                y_tensor = torch.tensor(y_chunk, dtype=torch.float32)
-                resampler = get_session_resampler(session_hash, sr)
-                y_resampled = resampler(y_tensor)
-                y_out = y_resampled.numpy().tolist()
-            else:
-                y_out = y_chunk
-                
-            yield y_out
+            target_samples = int(sr * 3.0)
+            if len(audio_buffer_48k) >= target_samples:
+                full_buffer = np.array(audio_buffer_48k[:target_samples], dtype=np.float32)
+                if sr != 16000:
+                    full_tensor = torch.tensor(full_buffer, dtype=torch.float32)
+                    resampler = get_session_resampler(session_hash, sr)
+                    y_resampled = resampler(full_tensor)
+                    y_out = y_resampled.numpy().tolist()
+                else:
+                    y_out = full_buffer.tolist()
+                yield y_out
+                audio_buffer_48k = audio_buffer_48k[target_samples:]
         except queue.Empty:
             yield None
 
