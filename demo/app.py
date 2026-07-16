@@ -18,6 +18,13 @@ fake = Faker('pl_PL')
 audio_queues = {}
 ui_queues = {}
 is_live = {}
+resamplers = {}
+
+def get_session_resampler(session_hash, sr):
+    key = (session_hash, sr)
+    if key not in resamplers:
+        resamplers[key] = torchaudio.transforms.Resample(orig_freq=sr, new_freq=16000)
+    return resamplers[key]
 
 def get_session_audio_listen(session_hash):
     q = audio_queues[session_hash]
@@ -32,7 +39,8 @@ def get_session_audio_listen(session_hash):
             
             if sr != 16000:
                 y_tensor = torch.tensor(y_chunk, dtype=torch.float32)
-                y_resampled = torchaudio.functional.resample(y_tensor, orig_freq=sr, new_freq=16000)
+                resampler = get_session_resampler(session_hash, sr)
+                y_resampled = resampler(y_tensor)
                 y_out = y_resampled.numpy().tolist()
             else:
                 y_out = y_chunk
@@ -43,7 +51,6 @@ def get_session_audio_listen(session_hash):
 
 def get_session_audio_record(session_hash):
     q = audio_queues[session_hash]
-    audio_buffer_48k = []
     
     while is_live.get(session_hash, False):
         try:
@@ -52,19 +59,16 @@ def get_session_audio_record(session_hash):
                 break
                 
             sr, y_chunk = chunk_tuple
-            audio_buffer_48k.extend(y_chunk)
             
-            target_samples = int(sr * 3.0)
-            if len(audio_buffer_48k) >= target_samples:
-                full_buffer = np.array(audio_buffer_48k[:target_samples], dtype=np.float32)
-                if sr != 16000:
-                    full_tensor = torch.tensor(full_buffer, dtype=torch.float32)
-                    resampled_tensor = torchaudio.functional.resample(full_tensor, orig_freq=sr, new_freq=16000)
-                    y_out = resampled_tensor.numpy().tolist()
-                else:
-                    y_out = full_buffer.tolist()
-                yield y_out
-                audio_buffer_48k = audio_buffer_48k[target_samples:]
+            if sr != 16000:
+                y_tensor = torch.tensor(y_chunk, dtype=torch.float32)
+                resampler = get_session_resampler(session_hash, sr)
+                y_resampled = resampler(y_tensor)
+                y_out = y_resampled.numpy().tolist()
+            else:
+                y_out = y_chunk
+                
+            yield y_out
         except queue.Empty:
             yield None
 
@@ -123,16 +127,19 @@ def live_mode_generator(request: gr.Request):
     
     yield "<h2>Oczekuję na detekcję... (Mów do mikrofonu)</h2>"
     
-    while is_live.get(session_hash, False):
-        try:
-            msg = ui_queues[session_hash].get(timeout=0.1)
-            yield msg
-            time.sleep(1.5)
-            yield "<h2>Nasłuchuję...</h2>"
-        except queue.Empty:
-            pass
+    try:
+        while is_live.get(session_hash, False):
+            try:
+                msg = ui_queues[session_hash].get(timeout=0.1)
+                yield msg
+                time.sleep(1.5)
+                yield "<h2>Nasłuchuję...</h2>"
+            except queue.Empty:
+                pass
+    finally:
+        is_live[session_hash] = False
+        t.join(timeout=1.0)
             
-    t.join()
     yield "<h2>Zatrzymano.</h2>"
 
 def admin_mode_generator(haslo, request: gr.Request):
@@ -262,24 +269,28 @@ def admin_mode_generator(haslo, request: gr.Request):
     
     yield "<h3>Rozpoczynamy...</h3>"
     
-    while is_live.get(session_hash, False):
-        try:
-            msg = ui_queues[session_hash].get(timeout=0.1)
-            if msg == "ZAKONCZONO":
-                break
-            yield msg
-        except queue.Empty:
-            pass
+    try:
+        while is_live.get(session_hash, False):
+            try:
+                msg = ui_queues[session_hash].get(timeout=0.1)
+                if msg == "ZAKONCZONO":
+                    break
+                yield msg
+            except queue.Empty:
+                pass
+    finally:
+        is_live[session_hash] = False
+        t.join(timeout=1.0)
             
-    is_live[session_hash] = False
     yield "<h3>✅ Koniec sesji.</h3>"
 
 with gr.Blocks(title="KeywordTensor Web") as demo:
     gr.Markdown("# 🎙️ KeywordTensor - Wersja Chmurowa")
     
+    audio_in = gr.Audio(sources=["microphone"], streaming=True, label="Mikrofon Główny")
+    
     with gr.Group(visible=True) as gate_group:
-        gr.Markdown("### 👆 Krok 1: Zezwól na dostęp i włącz nagrywanie, a następnie kliknij Dalej.")
-        audio_in = gr.Audio(sources=["microphone"], streaming=True, label="Mikrofon Główny")
+        gr.Markdown("### 👆 Krok 1: Zezwól na dostęp i włącz nagrywanie powyżej, a następnie kliknij Dalej.")
         btn_next = gr.Button("Dalej ➡️", variant="primary", interactive=False)
         
     with gr.Group(visible=False) as menu_group:
@@ -314,17 +325,28 @@ with gr.Blocks(title="KeywordTensor Web") as demo:
     def nav_to_live(): return gr.update(visible=False), gr.update(visible=True)
     def nav_to_admin(): return gr.update(visible=False), gr.update(visible=True)
     
+    def stop_global_mic(request: gr.Request):
+        session = request.session_hash
+        if session in is_live:
+            is_live[session] = False
+        return gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+
+    audio_in.stop_recording(
+        fn=stop_global_mic,
+        outputs=[gate_group, menu_group, live_group, admin_group]
+    )
+
     def nav_back(request: gr.Request):
         session = request.session_hash
         if session in is_live:
             is_live[session] = False
-        return gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(interactive=True), gr.update(interactive=True)
+        return gr.update(visible=True), gr.update(visible=False), gr.update(visible=False)
 
     btn_menu_live.click(nav_to_live, outputs=[menu_group, live_group])
     btn_menu_admin.click(nav_to_admin, outputs=[menu_group, admin_group])
     
-    btn_back_live.click(nav_back, outputs=[menu_group, live_group, admin_group, btn_start_live, btn_start_admin])
-    btn_back_admin.click(nav_back, outputs=[menu_group, live_group, admin_group, btn_start_live, btn_start_admin])
+    btn_back_live.click(nav_back, outputs=[menu_group, live_group, admin_group])
+    btn_back_admin.click(nav_back, outputs=[menu_group, live_group, admin_group])
     
     audio_in.stream(
         fn=handle_audio_stream,
@@ -332,17 +354,11 @@ with gr.Blocks(title="KeywordTensor Web") as demo:
     )
     
     btn_start_live.click(
-        fn=lambda: gr.update(interactive=False),
-        outputs=[btn_start_live]
-    ).then(
         fn=live_mode_generator,
         outputs=[live_output]
     )
     
     btn_start_admin.click(
-        fn=lambda: gr.update(interactive=False),
-        outputs=[btn_start_admin]
-    ).then(
         fn=admin_mode_generator,
         inputs=[admin_password],
         outputs=[admin_output]
