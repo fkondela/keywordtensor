@@ -21,7 +21,6 @@ is_live = {}
 
 def get_session_audio_listen(session_hash):
     q = audio_queues[session_hash]
-    audio_buffer_48k = collections.deque([0.0]*144000, maxlen=144000)
     
     while is_live.get(session_hash, False):
         try:
@@ -30,15 +29,13 @@ def get_session_audio_listen(session_hash):
                 break
             
             sr, y_chunk = chunk_tuple
-            audio_buffer_48k.extend(y_chunk)
             
-            full_buffer = np.array(audio_buffer_48k, dtype=np.float32)
             if sr != 16000:
-                full_tensor = torch.tensor(full_buffer, dtype=torch.float32)
-                resampled_tensor = torchaudio.functional.resample(full_tensor, orig_freq=sr, new_freq=16000)
-                y_out = resampled_tensor.numpy().tolist()
+                y_tensor = torch.tensor(y_chunk, dtype=torch.float32)
+                y_resampled = torchaudio.functional.resample(y_tensor, orig_freq=sr, new_freq=16000)
+                y_out = y_resampled.numpy().tolist()
             else:
-                y_out = full_buffer.tolist()
+                y_out = y_chunk
                 
             yield y_out
         except queue.Empty:
