@@ -292,20 +292,17 @@ def admin_mode_generator(haslo, request: gr.Request):
     if not error_occurred:
         yield "<h3>✅ Koniec sesji.</h3>"
 
-with gr.Blocks(title="KeywordTensor Web") as demo:
+with gr.Blocks(title="KeywordTensor Web", theme=gr.themes.Soft()) as demo:
     gr.Markdown("# 🎙️ KeywordTensor - Wersja Chmurowa")
     
-    audio_in = gr.Audio(sources=["microphone"], streaming=True, label="Mikrofon Główny")
-    
-    with gr.Group(visible=True) as gate_group:
-        gr.Markdown("### 👆 Krok 1: Zezwól na dostęp i włącz nagrywanie powyżej, a następnie kliknij Dalej.")
-        btn_next = gr.Button("Dalej ➡️", variant="primary", interactive=False)
+    with gr.Accordion("👆 Krok 1: Kliknij 'Record', aby aktywować mikrofon", open=True) as mic_accordion:
+        audio_in = gr.Audio(sources=["microphone"], streaming=True, label="Nagrywanie w tle")
         
     with gr.Group(visible=False) as menu_group:
-        gr.Markdown("### 🎛️ Wybierz tryb działania:")
+        gr.Markdown("### Wybierz tryb działania:")
         with gr.Row():
-            btn_menu_live = gr.Button("🔴 Detekcja na żywo", variant="primary")
-            btn_menu_admin = gr.Button("🛠️ Panel Administratora", variant="secondary")
+            btn_menu_live = gr.Button("🎙️ Detekcja na żywo", variant="primary")
+            btn_menu_admin = gr.Button("🛠️ Panel Administracyjny (Zbieranie Próbek)", variant="secondary")
             
     with gr.Group(visible=False) as live_group:
         btn_back_live = gr.Button("🔙 Zatrzymaj i Wróć do menu", variant="stop")
@@ -320,30 +317,28 @@ with gr.Blocks(title="KeywordTensor Web") as demo:
         btn_start_admin = gr.Button("🚀 Rozpocznij Sesję Próbek", variant="primary")
         admin_output = gr.HTML("<h3>Oczekuję na start...</h3>")
 
+    def on_mic_start():
+        return gr.update(open=False, label="✅ Mikrofon aktywny (Działa w tle)"), gr.update(visible=True)
+
     audio_in.start_recording(
-        fn=lambda: gr.update(interactive=True),
-        outputs=[btn_next]
+        fn=on_mic_start,
+        outputs=[mic_accordion, menu_group]
     )
-    
-    btn_next.click(
-        fn=lambda: (gr.update(visible=False), gr.update(visible=True)),
-        outputs=[gate_group, menu_group]
-    )
-    
-    def nav_to_live(): return gr.update(visible=False), gr.update(visible=True)
-    def nav_to_admin(): return gr.update(visible=False), gr.update(visible=True)
-    
-    def stop_global_mic(request: gr.Request):
+
+    def on_mic_stop(request: gr.Request):
         session = request.session_hash
         if session in is_live:
             is_live[session] = False
-        return gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+        return gr.update(open=True, label="👆 Krok 1: Kliknij 'Record', aby aktywować mikrofon"), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
 
     audio_in.stop_recording(
-        fn=stop_global_mic,
-        outputs=[gate_group, menu_group, live_group, admin_group]
+        fn=on_mic_stop,
+        outputs=[mic_accordion, menu_group, live_group, admin_group]
     )
 
+    def nav_to_live(): return gr.update(visible=False), gr.update(visible=True)
+    def nav_to_admin(): return gr.update(visible=False), gr.update(visible=True)
+    
     def nav_back(request: gr.Request):
         session = request.session_hash
         if session in is_live:
