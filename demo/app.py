@@ -67,7 +67,7 @@ def get_session_audio_record(session_hash):
                 else:
                     y_out = full_buffer.tolist()
                 yield y_out
-                break
+                audio_buffer_48k = audio_buffer_48k[target_samples:]
         except queue.Empty:
             yield None
 
@@ -109,14 +109,17 @@ def live_mode_generator(request: gr.Request):
         ui_queues[session_hash].put("<h2>🔥 Wykryto: <span style='color:red'>FAŁSZ</span></h2>")
         
     def thread_func():
-        engine.listen(
-            "prawda_falsz", 
-            actions={
-                "prawda": {"function": prawda_cb, "cooldown": 3.0}, 
-                "falsz": {"function": falsz_cb, "cooldown": 3.0}
-            }, 
-            source=get_session_audio_listen(session_hash)
-        )
+        try:
+            engine.listen(
+                "prawda_falsz", 
+                actions={
+                    "prawda": {"function": prawda_cb, "cooldown": 3.0}, 
+                    "falsz": {"function": falsz_cb, "cooldown": 3.0}
+                }, 
+                source=get_session_audio_listen(session_hash)
+            )
+        except Exception as e:
+            ui_queues[session_hash].put(f"<h2>❌ BŁĄD SILNIKA: {str(e)}</h2>")
         
     t = threading.Thread(target=thread_func)
     t.start()
