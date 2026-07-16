@@ -303,8 +303,9 @@ def admin_mode_generator(haslo, request: gr.Request):
 with gr.Blocks(title="KeywordTensor Web") as demo:
     gr.Markdown("# 🎙️ KeywordTensor - Wersja Chmurowa")
     
-    with gr.Accordion("👆 Krok 1: Kliknij 'Record', aby aktywować mikrofon", open=True) as mic_accordion:
+    with gr.Accordion("👆 Krok 1: Włącz mikrofon, wybierz poprawny z listy i przetestuj", open=True) as mic_accordion:
         audio_in = gr.Audio(sources=["microphone"], streaming=True, label="Nagrywanie w tle")
+        btn_confirm_mic = gr.Button("✅ Mikrofon działa - Przejdź dalej", variant="primary", interactive=False)
         
     with gr.Group(visible=False) as menu_group:
         gr.Markdown("### Wybierz tryb działania:")
@@ -325,11 +326,16 @@ with gr.Blocks(title="KeywordTensor Web") as demo:
         btn_start_admin = gr.Button("🚀 Rozpocznij Sesję Próbek", variant="primary")
         admin_output = gr.HTML("<h3>Oczekuję na start...</h3>")
 
-    def on_mic_start():
+    audio_in.start_recording(
+        fn=lambda: gr.update(interactive=True),
+        outputs=[btn_confirm_mic]
+    )
+
+    def confirm_mic():
         return gr.update(open=False, label="✅ Mikrofon aktywny (Działa w tle)"), gr.update(visible=True)
 
-    audio_in.start_recording(
-        fn=on_mic_start,
+    btn_confirm_mic.click(
+        fn=confirm_mic,
         outputs=[mic_accordion, menu_group]
     )
 
@@ -337,11 +343,11 @@ with gr.Blocks(title="KeywordTensor Web") as demo:
         session = request.session_hash
         if session in is_live:
             is_live[session] = False
-        return gr.update(open=True, label="👆 Krok 1: Kliknij 'Record', aby aktywować mikrofon"), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+        return gr.update(open=True, label="👆 Krok 1: Włącz mikrofon, wybierz poprawny z listy i przetestuj"), gr.update(interactive=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
 
     audio_in.stop_recording(
         fn=on_mic_stop,
-        outputs=[mic_accordion, menu_group, live_group, admin_group]
+        outputs=[mic_accordion, btn_confirm_mic, menu_group, live_group, admin_group]
     )
 
     def nav_to_live(): return gr.update(visible=False), gr.update(visible=True)
