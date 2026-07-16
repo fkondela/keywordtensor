@@ -160,7 +160,7 @@ def automatic_session_gradio(haslo, request: gr.Request):
     }
 
     def zapisz_i_wyslij(klasa, index, tensor_data, sr):
-        torchaudio.save("temp.wav", tensor_data, sr)
+        torchaudio.save("/tmp/temp.wav", tensor_data, sr)
         try:
             from huggingface_hub import HfApi
             hf_token = os.environ.get("HF_TOKEN")
@@ -170,7 +170,7 @@ def automatic_session_gradio(haslo, request: gr.Request):
             api = HfApi(token=hf_token)
             baza_nazwy = f"{klasa}/probka_{int(time.time())}_{random.randint(1000, 9999)}_{index}"
             api.upload_file(
-                path_or_fileobj="temp.wav",
+                path_or_fileobj="/tmp/temp.wav",
                 path_in_repo=f"{baza_nazwy}.wav",
                 repo_id="fkondela/KeywordTensor_prawda_falsz", 
                 repo_type="dataset"
