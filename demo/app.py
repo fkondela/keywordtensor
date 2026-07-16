@@ -8,7 +8,6 @@ import collections
 import numpy as np
 import torch
 import torchaudio
-import torchaudio.transforms
 import gradio as gr
 from faker import Faker
 from keywordtensor.core import Engine
@@ -19,13 +18,6 @@ fake = Faker('pl_PL')
 audio_queues = {}
 ui_queues = {}
 is_live = {}
-resamplers = {}
-
-def get_session_resampler(session_hash, sr):
-    key = (session_hash, sr)
-    if key not in resamplers:
-        resamplers[key] = torchaudio.transforms.Resample(orig_freq=sr, new_freq=16000)
-    return resamplers[key]
 
 def get_session_audio_listen(session_hash):
     q = audio_queues[session_hash]
@@ -40,8 +32,7 @@ def get_session_audio_listen(session_hash):
             
             if sr != 16000:
                 y_tensor = torch.tensor(y_chunk, dtype=torch.float32)
-                resampler = get_session_resampler(session_hash, sr)
-                y_resampled = resampler(y_tensor)
+                y_resampled = torchaudio.functional.resample(y_tensor, orig_freq=sr, new_freq=16000)
                 y_out = y_resampled.numpy().tolist()
             else:
                 y_out = y_chunk
@@ -68,8 +59,7 @@ def get_session_audio_record(session_hash):
                 full_buffer = np.array(audio_buffer_48k[:target_samples], dtype=np.float32)
                 if sr != 16000:
                     full_tensor = torch.tensor(full_buffer, dtype=torch.float32)
-                    resampler = get_session_resampler(session_hash, sr)
-                    y_resampled = resampler(full_tensor)
+                    y_resampled = torchaudio.functional.resample(full_tensor, orig_freq=sr, new_freq=16000)
                     y_out = y_resampled.numpy().tolist()
                 else:
                     y_out = full_buffer.tolist()
@@ -133,12 +123,14 @@ def live_mode_generator(request: gr.Request):
     
     yield "<h2>Oczekuję na detekcję... (Mów do mikrofonu)</h2>"
     
+    error_occurred = False
     try:
         while is_live.get(session_hash, False):
             try:
                 msg = ui_queues[session_hash].get(timeout=0.1)
                 yield msg
                 if "BŁĄD" in msg:
+                    error_occurred = True
                     is_live[session_hash] = False
                     break
                 time.sleep(1.5)
@@ -149,7 +141,8 @@ def live_mode_generator(request: gr.Request):
         is_live[session_hash] = False
         t.join(timeout=1.0)
             
-    yield "<h2>Zatrzymano.</h2>"
+    if not error_occurred:
+        yield "<h2>Zatrzymano.</h2>"
 
 def admin_mode_generator(haslo, request: gr.Request):
     session_hash = request.session_hash
@@ -278,6 +271,7 @@ def admin_mode_generator(haslo, request: gr.Request):
     
     yield "<h3>Rozpoczynamy...</h3>"
     
+    error_occurred = False
     try:
         while is_live.get(session_hash, False):
             try:
@@ -285,13 +279,18 @@ def admin_mode_generator(haslo, request: gr.Request):
                 if msg == "ZAKONCZONO":
                     break
                 yield msg
+                if "BŁĄD" in msg:
+                    error_occurred = True
+                    is_live[session_hash] = False
+                    break
             except queue.Empty:
                 pass
     finally:
         is_live[session_hash] = False
         t.join(timeout=1.0)
             
-    yield "<h3>✅ Koniec sesji.</h3>"
+    if not error_occurred:
+        yield "<h3>✅ Koniec sesji.</h3>"
 
 with gr.Blocks(title="KeywordTensor Web") as demo:
     gr.Markdown("# 🎙️ KeywordTensor - Wersja Chmurowa")
