@@ -46,7 +46,7 @@ def consume_ui_events(ui_queue, thread, live_flag):
                 msg = ui_queue.get(timeout=0.1)
                 if msg == "ZAKONCZONO":
                     break
-                yield msg
+                yield msg, gr.update(visible=False)
                 if "ERROR" in msg:
                     error_occurred = True
                     live_flag[0] = False
@@ -58,7 +58,7 @@ def consume_ui_events(ui_queue, thread, live_flag):
         thread.join(timeout=1.0)
         
     if not error_occurred:
-        yield "<h3>Session Ended.</h3>"
+        yield "<h3>Zakończono bezpiecznie.</h3>", gr.update(visible=True)
 
 def handle_audio_stream(chunk, audio_queue):
     if chunk is not None:
@@ -88,6 +88,8 @@ def live_mode_generator(audio_queue, ui_queue, live_flag):
         ui_queue.put("<h2>Detected: <span style='color:green'>TRUE</span></h2>")
     def falsz_cb():
         ui_queue.put("<h2>Detected: <span style='color:red'>FALSE</span></h2>")
+    def other_cb():
+        ui_queue.put("<h2>Detected: <span style='color:gray'>OTHER</span></h2>")
         
     def thread_func():
         try:
@@ -95,11 +97,12 @@ def live_mode_generator(audio_queue, ui_queue, live_flag):
                 "prawda_falsz", 
                 actions={
                     "prawda": {"function": prawda_cb, "cooldown": 3.0}, 
-                    "falsz": {"function": falsz_cb, "cooldown": 3.0}
+                    "falsz": {"function": falsz_cb, "cooldown": 3.0},
+                    "other": {"function": other_cb, "cooldown": 0.0}
                 }, 
                 source=get_audio_stream(audio_queue, live_flag, sliding_window=True),
                 min_confidence=0.55,
-                n_averages=1
+                n_averages=3
             )
         except Exception as e:
             ui_queue.put(f"<h2>ERROR: {str(e)}</h2>")
@@ -107,13 +110,13 @@ def live_mode_generator(audio_queue, ui_queue, live_flag):
     t = threading.Thread(target=thread_func)
     t.start()
     
-    yield "<h2>Awaiting detection... (Speak into microphone)</h2>"
+    yield "<h2>Awaiting detection... (Speak into microphone)</h2>", gr.update(visible=False)
     yield from consume_ui_events(ui_queue, t, live_flag)
 
 def admin_mode_generator(password, audio_queue, ui_queue, live_flag):
     expected_password = os.environ.get("ADMIN_PASS", "dev123")
     if password != expected_password:
-        yield "<h3>Invalid Password!</h3>"
+        yield "<h3>Invalid Password!</h3>", gr.update(visible=True)
         return
         
     live_flag[0] = True
@@ -248,7 +251,7 @@ def admin_mode_generator(password, audio_queue, ui_queue, live_flag):
     t = threading.Thread(target=thread_func)
     t.start()
     
-    yield "<h3>Starting...</h3>"
+    yield "<h3>Starting...</h3>", gr.update(visible=False)
     yield from consume_ui_events(ui_queue, t, live_flag)
 
 with gr.Blocks(title="KeywordTensor Web") as demo:
@@ -318,23 +321,15 @@ with gr.Blocks(title="KeywordTensor Web") as demo:
     )
     
     btn_start_live.click(
-        fn=lambda: gr.update(visible=False),
-        outputs=[btn_start_live]
-    )
-    btn_start_live.click(
         fn=live_mode_generator,
         inputs=[audio_queue_state, ui_queue_state, live_flag_state],
-        outputs=[live_output]
+        outputs=[live_output, btn_start_live]
     )
     
     btn_start_admin.click(
-        fn=lambda: gr.update(visible=False),
-        outputs=[btn_start_admin]
-    )
-    btn_start_admin.click(
         fn=admin_mode_generator,
         inputs=[admin_password, audio_queue_state, ui_queue_state, live_flag_state],
-        outputs=[admin_output]
+        outputs=[admin_output, btn_start_admin]
     )
 
 if __name__ == "__main__":
