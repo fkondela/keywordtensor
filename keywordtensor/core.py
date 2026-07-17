@@ -221,13 +221,7 @@ class Engine:
         prediction_history = deque(maxlen=n_averages)
         last_trigger_times = {}
         
-        if listen_time == -1:
-            wav_tensor = torch.tensor(source, dtype=torch.float32)
-            if len(wav_tensor) > buf_len:
-                wav_tensor = wav_tensor[-buf_len:]
-            elif len(wav_tensor) < buf_len:
-                wav_tensor = torch.nn.functional.pad(wav_tensor, (0, buf_len - len(wav_tensor)))
-                
+        def get_probabilities(wav_tensor):
             spectrogram = wav_to_spec.encodes(wav_tensor)
             spectrogram = normalize_spec.encodes(spectrogram)
             onnx_data = spectrogram.unsqueeze(0).unsqueeze(0).numpy()
@@ -237,24 +231,19 @@ class Engine:
             probs = exp_res / exp_res.sum()
             return {label: float(prob) for label, prob in zip(labels, probs)}
 
-        def _run_inference(current_buffer, current_sr):
-            wav_tensor = torch.tensor(current_buffer, dtype=torch.float32)
-            
-            if current_sr is not None and current_sr != sr:
-                wav_tensor = torchaudio.functional.resample(wav_tensor, orig_freq=current_sr, new_freq=sr)
-            
+        if listen_time == -1:
+            wav_tensor = torch.tensor(source, dtype=torch.float32)
             if len(wav_tensor) > buf_len:
                 wav_tensor = wav_tensor[-buf_len:]
             elif len(wav_tensor) < buf_len:
-                return
-                
-            spectrogram = wav_to_spec.encodes(wav_tensor)
-            spectrogram = normalize_spec.encodes(spectrogram)
-            onnx_data = spectrogram.unsqueeze(0).unsqueeze(0).numpy()
+                wav_tensor = torch.nn.functional.pad(wav_tensor, (0, buf_len - len(wav_tensor)))
+            return get_probabilities(wav_tensor)
+
+        def _run_inference(current_buffer):
+            wav_tensor = torch.tensor(current_buffer, dtype=torch.float32)
+            wyniki = get_probabilities(wav_tensor)
             
-            logits = sess.run(None, {inp_name: onnx_data})[0][0]
-            exp_res = np.exp(logits - np.max(logits))
-            probs = exp_res / exp_res.sum()
+            probs = [wyniki[l] for l in labels]
             prediction_history.append(probs)
             
             if len(prediction_history) == n_averages:
@@ -281,7 +270,6 @@ class Engine:
                             prediction_history.clear()
                             last_trigger_times[predicted_class] = time.time()
 
-        current_sr = None
         stream = None
         
         is_mic = isinstance(source, str) and source.startswith("microphone")
@@ -302,42 +290,35 @@ class Engine:
                 
             stream = sd.InputStream(samplerate=sr, channels=1, device=device_id, callback=_audio_callback)
             stream.start()
-            current_sr = sr
         else:
             if not hasattr(source, "__iter__") and not hasattr(source, "__next__"):
                 raise ValueError("Source must be 'microphone' or an iterable/generator of audio samples.")
             iterator_source = iter(source)
+            
+            def _generator_thread():
+                for chunk in iterator_source:
+                    if chunk is not None:
+                        audio_buffer.extend(chunk)
+            
+            t = threading.Thread(target=_generator_thread, daemon=True)
+            t.start()
 
         start_time = time.time()
-        last_inference_time = 0
         try:
+            # Czekamy na pierwsze pełne napełnienie bufora, by nie analizować zer
+            time.sleep(duration)
+            
             while True:
                 if listen_time > 0 and (time.time() - start_time) >= listen_time:
                     break
                 
-                active_sr = None
+                # Zabezpieczenie przed nieskończonym wyciekiem CPU na serwerze!
+                if not is_mic and not t.is_alive():
+                    break
                 
-                if is_mic:
-                    active_sr = current_sr
-                else:
-                    try:
-                        chunk = next(iterator_source)
-                        if chunk is not None:
-                            if current_sr is None:
-                                current_sr = sr
-                            audio_buffer.extend(chunk)
-                        active_sr = current_sr
-                    except StopIteration:
-                        break
-                
-                if active_sr and len(audio_buffer) >= int(active_sr * duration):
-                    current_time = time.time()
-                    if current_time - last_inference_time >= 0.5:
-                        current_buffer = list(audio_buffer)[-int(active_sr * duration):]
-                        _run_inference(current_buffer, active_sr)
-                        last_inference_time = current_time
-                    
+                _run_inference(list(audio_buffer))
                 time.sleep(0.05)
+
         finally:
             if stream is not None:
                 stream.stop()
@@ -350,6 +331,20 @@ class Engine:
         sr = 16000
         total_samples = int(sr * duration)
         is_mic = isinstance(source, str) and source.startswith("microphone")
+        device_id = None
+        
+        if is_mic:
+            if not HAS_SOUNDDEVICE:
+                raise RuntimeError("Live recording requires sounddevice.")
+            if ":" in source:
+                try:
+                    device_id = int(source.split(":")[1])
+                except ValueError:
+                    pass
+        else:
+            if not hasattr(source, "__iter__") and not hasattr(source, "__next__"):
+                raise ValueError("Source must be an iterable/generator.")
+            iterator_source = iter(source)
         
         if isinstance(target, str):
             for cls in classes:
@@ -361,36 +356,18 @@ class Engine:
                 
                 def watek_nagrywania():
                     if is_mic:
-                        if not HAS_SOUNDDEVICE:
-                            raise RuntimeError("Live recording requires sounddevice.")
-                        device_id = None
-                        if ":" in source:
-                            try:
-                                device_id = int(source.split(":")[1])
-                            except ValueError:
-                                pass
                         audio_data = sd.rec(total_samples, samplerate=sr, channels=1, dtype='float32', device=device_id)
                         sd.wait()
                         tensor_data = torch.tensor(audio_data, dtype=torch.float32).T
                         tensor_container.append(tensor_data)
                     else:
-                        if not hasattr(source, "__iter__") and not hasattr(source, "__next__"):
-                            raise ValueError("Source must be an iterable/generator.")
-                        iterator_source = iter(source)
-                        
-                        audio_list = []
-                        collected = 0
-                        while collected < total_samples:
-                            try:
-                                chunk = next(iterator_source)
-                                if chunk is not None:
-                                    audio_list.extend(chunk)
-                                    collected += len(chunk)
-                            except StopIteration:
-                                break
-                                
-                        tensor_data = torch.tensor(audio_list[:total_samples], dtype=torch.float32).unsqueeze(0)
-                        tensor_container.append(tensor_data)
+                        try:
+                            chunk = next(iterator_source)
+                            chunk = chunk[:total_samples]
+                            tensor_data = torch.tensor(chunk, dtype=torch.float32).unsqueeze(0)
+                            tensor_container.append(tensor_data)
+                        except StopIteration:
+                            tensor_container.append(None)
 
                 t = threading.Thread(target=watek_nagrywania)
                 
@@ -407,6 +384,11 @@ class Engine:
                     
                 t.join()
                 tensor_data = tensor_container[0]
+                
+                # Zabezpieczenie przed wysyłaniem uciętych/pustych nagrań
+                if tensor_data is None:
+                    print("Źródło audio zostało zamknięte. Przerywam nagrywanie.")
+                    return
 
                 if isinstance(target, str):
                     save_path = os.path.join(target, cls, f"{i}.wav")

@@ -1,10 +1,8 @@
 import os
-import sys
 import time
 import random
 import queue
 import threading
-import collections
 import numpy as np
 import torch
 import torchaudio
@@ -15,64 +13,54 @@ from keywordtensor.core import Engine
 engine = Engine()
 fake = Faker('pl_PL')
 
-audio_queues = {}
-ui_queues = {}
-is_live = {}
-
-def get_session_audio_listen(session_hash):
-    q = audio_queues[session_hash]
-    
-    while is_live.get(session_hash, False):
+def get_audio_stream(q, live_flag, sliding_window=True):
+    raw_buffer = []
+    while live_flag[0]:
         try:
-            chunk_tuple = q.get(timeout=0.1)
-            if chunk_tuple == "STOP":
-                break
+            chunk = q.get(timeout=0.1)
+            sr, y_chunk = chunk
+            raw_buffer.extend(y_chunk)
             
-            sr, y_chunk = chunk_tuple
-            
-            if sr != 16000:
-                y_tensor = torch.tensor(y_chunk, dtype=torch.float32)
-                y_resampled = torchaudio.functional.resample(y_tensor, orig_freq=sr, new_freq=16000)
-                y_out = y_resampled.numpy().tolist()
-            else:
-                y_out = y_chunk
-                
-            yield y_out
-        except queue.Empty:
-            yield None
-
-def get_session_audio_record(session_hash):
-    q = audio_queues[session_hash]
-    audio_buffer_48k = []
-    
-    while is_live.get(session_hash, False):
-        try:
-            chunk_tuple = q.get(timeout=0.1)
-            if chunk_tuple == "STOP":
-                break
-                
-            sr, y_chunk = chunk_tuple
-            audio_buffer_48k.extend(y_chunk)
-            
-            target_samples = int(sr * 3.0)
-            if len(audio_buffer_48k) >= target_samples:
-                full_buffer = np.array(audio_buffer_48k[:target_samples], dtype=np.float32)
-                if sr != 16000:
-                    full_tensor = torch.tensor(full_buffer, dtype=torch.float32)
-                    y_resampled = torchaudio.functional.resample(full_tensor, orig_freq=sr, new_freq=16000)
-                    y_out = y_resampled.numpy().tolist()
+            target = int(sr * 3.0)
+            if len(raw_buffer) >= target:
+                if sliding_window:
+                    raw_buffer = raw_buffer[-target:]
+                    process_buf = raw_buffer
                 else:
-                    y_out = full_buffer.tolist()
-                yield y_out
-                audio_buffer_48k = audio_buffer_48k[target_samples:]
+                    process_buf = raw_buffer[:target]
+                    raw_buffer = raw_buffer[target:]
+                
+                y_tensor = torch.tensor(process_buf, dtype=torch.float32)
+                if sr != 16000:
+                    y_tensor = torchaudio.functional.resample(y_tensor, orig_freq=sr, new_freq=16000)
+                
+                yield y_tensor.numpy().tolist()
         except queue.Empty:
-            yield None
+            pass
 
-def handle_audio_stream(chunk, request: gr.Request):
-    session_hash = request.session_hash
-    if session_hash not in audio_queues:
-        audio_queues[session_hash] = queue.Queue(maxsize=100)
-    
+def consume_ui_events(ui_queue, thread, live_flag):
+    error_occurred = False
+    try:
+        while live_flag[0]:
+            try:
+                msg = ui_queue.get(timeout=0.1)
+                if msg == "ZAKONCZONO":
+                    break
+                yield msg
+                if "ERROR" in msg:
+                    error_occurred = True
+                    live_flag[0] = False
+                    break
+            except queue.Empty:
+                pass
+    finally:
+        live_flag[0] = False
+        thread.join(timeout=1.0)
+        
+    if not error_occurred:
+        yield "<h3>Session Ended.</h3>"
+
+def handle_audio_stream(chunk, audio_queue):
     if chunk is not None:
         sr, y = chunk
         if y.dtype != np.float32:
@@ -81,29 +69,25 @@ def handle_audio_stream(chunk, request: gr.Request):
             y = np.mean(y, axis=1)
             
         try:
-            audio_queues[session_hash].put_nowait((sr, y.tolist()))
+            audio_queue.put_nowait((sr, y.tolist()))
         except queue.Full:
             try:
-                audio_queues[session_hash].get_nowait()
-                audio_queues[session_hash].put_nowait((sr, y.tolist()))
+                audio_queue.get_nowait()
+                audio_queue.put_nowait((sr, y.tolist()))
             except:
                 pass
 
-def live_mode_generator(request: gr.Request):
-    session_hash = request.session_hash
-    is_live[session_hash] = True
-    
-    if session_hash not in audio_queues:
-        audio_queues[session_hash] = queue.Queue(maxsize=100)
-    ui_queues[session_hash] = queue.Queue()
-    
-    while not audio_queues[session_hash].empty():
-        audio_queues[session_hash].get()
-    
+def live_mode_generator(audio_queue, ui_queue, live_flag):
+    live_flag[0] = True
+    with audio_queue.mutex:
+        audio_queue.queue.clear()
+    with ui_queue.mutex:
+        ui_queue.queue.clear()
+        
     def prawda_cb():
-        ui_queues[session_hash].put("<h2>🔥 Wykryto: <span style='color:green'>PRAWDA</span></h2>")
+        ui_queue.put("<h2>Detected: <span style='color:green'>TRUE</span></h2>")
     def falsz_cb():
-        ui_queues[session_hash].put("<h2>🔥 Wykryto: <span style='color:red'>FAŁSZ</span></h2>")
+        ui_queue.put("<h2>Detected: <span style='color:red'>FALSE</span></h2>")
         
     def thread_func():
         try:
@@ -113,49 +97,31 @@ def live_mode_generator(request: gr.Request):
                     "prawda": {"function": prawda_cb, "cooldown": 3.0}, 
                     "falsz": {"function": falsz_cb, "cooldown": 3.0}
                 }, 
-                source=get_session_audio_listen(session_hash)
+                source=get_audio_stream(audio_queue, live_flag, sliding_window=True),
+                min_confidence=0.55,
+                n_averages=1
             )
         except Exception as e:
-            ui_queues[session_hash].put(f"<h2>❌ BŁĄD SILNIKA: {str(e)}</h2>")
-        
+            ui_queue.put(f"<h2>ERROR: {str(e)}</h2>")
+            
     t = threading.Thread(target=thread_func)
     t.start()
     
-    yield "<h2>Oczekuję na detekcję... (Mów do mikrofonu)</h2>"
-    
-    error_occurred = False
-    try:
-        while is_live.get(session_hash, False):
-            try:
-                msg = ui_queues[session_hash].get(timeout=0.1)
-                yield msg
-                if "BŁĄD" in msg:
-                    error_occurred = True
-                    is_live[session_hash] = False
-                    break
-                time.sleep(1.5)
-                yield "<h2>Nasłuchuję...</h2>"
-            except queue.Empty:
-                pass
-    finally:
-        is_live[session_hash] = False
-        t.join(timeout=1.0)
-            
-    if not error_occurred:
-        yield "<h2>Zatrzymano.</h2>"
+    yield "<h2>Awaiting detection... (Speak into microphone)</h2>"
+    yield from consume_ui_events(ui_queue, t, live_flag)
 
-def admin_mode_generator(haslo, request: gr.Request):
-    session_hash = request.session_hash
-    oczekiwane_haslo = os.environ.get("ADMIN_PASS", "dev123")
-    if haslo != oczekiwane_haslo:
-        yield "<h3>❌ Błędne hasło!</h3>"
+def admin_mode_generator(password, audio_queue, ui_queue, live_flag):
+    expected_password = os.environ.get("ADMIN_PASS", "dev123")
+    if password != expected_password:
+        yield "<h3>Invalid Password!</h3>"
         return
         
-    is_live[session_hash] = True
-    if session_hash not in audio_queues:
-        audio_queues[session_hash] = queue.Queue(maxsize=100)
-    ui_queues[session_hash] = queue.Queue()
-    
+    live_flag[0] = True
+    with audio_queue.mutex:
+        audio_queue.queue.clear()
+    with ui_queue.mutex:
+        ui_queue.queue.clear()
+        
     ZAKAZANE_SLOWA = ["prawda", "fałsz", "falsz", "prawdę", "prawde"]
     WLASNE_SLOWA = ["prawie", "prawo", "prawnik", "sprawdzam", "sprawa", "fauna", "fala", "szum", "wdowa", "owca"]
     
@@ -192,38 +158,43 @@ def admin_mode_generator(haslo, request: gr.Request):
 
     def tworz_akcje(klasa):
         def akcja(start_callback):
-            while not audio_queues[session_hash].empty():
-                audio_queues[session_hash].get()
+            with audio_queue.mutex:
+                audio_queue.queue.clear()
                 
             timeline = zbuduj_timeline(klasa)
             plan_str = " | ".join([f"**[{z['start']:.1f}s]** {z['tekst']}" for z in timeline])
-            ui_queues[session_hash].put(f"<h3>📘 Plan (5s):</h3><p>{plan_str}</p>")
-            time.sleep(5.0)
+            ui_queue.put(f"<h3>Plan (5s):</h3><p>{plan_str}</p>")
+            
+            for _ in range(50):
+                if not live_flag[0]: return
+                time.sleep(0.1)
             
             for i in [3, 2, 1]:
-                ui_queues[session_hash].put(f"<h3>⏳ Start za {i}...</h3>")
+                if not live_flag[0]: return
+                ui_queue.put(f"<h3>Start in {i}...</h3>")
                 time.sleep(1.0)
                 
-            while not audio_queues[session_hash].empty():
-                audio_queues[session_hash].get()
+            with audio_queue.mutex:
+                audio_queue.queue.clear()
                 
             start_callback()
             start_nagrania = time.time()
             
             while (t := time.time() - start_nagrania) < 3.0:
+                if not live_flag[0]: return
                 html_out = ""
                 for z in timeline:
                     if not z["odczytane"] and t >= z["start"]:
                         if z["docelowe"]:
-                            html_out = f"<h2>🔴 MÓW: <span style='color:red'>{z['tekst']}</span></h2>"
+                            html_out = f"<h2>SPEAK: <span style='color:red'>{z['tekst']}</span></h2>"
                         else:
-                            html_out = f"<h2>⚪ MÓW: {z['tekst']}</h2>"
+                            html_out = f"<h2>SPEAK: {z['tekst']}</h2>"
                         z["odczytane"] = True
                 if html_out:
-                    ui_queues[session_hash].put(html_out)
+                    ui_queue.put(html_out)
                 time.sleep(0.05)
                 
-            ui_queues[session_hash].put("<h3>✅ Zakończono nagrywanie! Wysyłanie do HF...</h3>")
+            ui_queue.put("<h3>Recording finished! Uploading...</h3>")
         return akcja
 
     moje_akcje = {
@@ -245,7 +216,7 @@ def admin_mode_generator(haslo, request: gr.Request):
             from huggingface_hub import HfApi
             hf_token = os.environ.get("HF_TOKEN")
             if not hf_token:
-                ui_queues[session_hash].put("<h3>❌ Brak tokenu HF_TOKEN!</h3>")
+                ui_queue.put("<h3>ERROR: Missing HF_TOKEN!</h3>")
                 return
             api = HfApi(token=hf_token)
             baza_nazwy = f"{klasa}/probka_{int(time.time())}_{random.randint(1000, 9999)}_{index}"
@@ -255,9 +226,9 @@ def admin_mode_generator(haslo, request: gr.Request):
                 repo_id="fkondela/KeywordTensor_prawda_falsz", 
                 repo_type="dataset"
             )
-            ui_queues[session_hash].put(f"<h3>✅ Pomyślnie wysłano próbkę: {klasa}</h3>")
+            ui_queue.put(f"<h3>Successfully uploaded: {klasa}</h3>")
         except Exception as e:
-            ui_queues[session_hash].put(f"<h3>❌ Błąd: {str(e)}</h3>")
+            ui_queue.put(f"<h3>ERROR: {str(e)}</h3>")
 
     def thread_func():
         try:
@@ -266,65 +237,48 @@ def admin_mode_generator(haslo, request: gr.Request):
                 classes=["prawda", "falsz"],
                 samples=2,
                 actions=moje_akcje,
-                source=get_session_audio_record(session_hash),
+                source=get_audio_stream(audio_queue, live_flag, sliding_window=False),
                 duration=3.0
             )
-            ui_queues[session_hash].put("ZAKONCZONO")
+            ui_queue.put("ZAKONCZONO")
         except Exception as e:
-            ui_queues[session_hash].put(f"<h3>❌ BŁĄD SILNIKA (Record): {str(e)}</h3>")
-            ui_queues[session_hash].put("ZAKONCZONO")
+            ui_queue.put(f"<h3>ERROR: {str(e)}</h3>")
+            ui_queue.put("ZAKONCZONO")
 
     t = threading.Thread(target=thread_func)
     t.start()
     
-    yield "<h3>Rozpoczynamy...</h3>"
-    
-    error_occurred = False
-    try:
-        while is_live.get(session_hash, False):
-            try:
-                msg = ui_queues[session_hash].get(timeout=0.1)
-                if msg == "ZAKONCZONO":
-                    break
-                yield msg
-                if "BŁĄD" in msg:
-                    error_occurred = True
-                    is_live[session_hash] = False
-                    break
-            except queue.Empty:
-                pass
-    finally:
-        is_live[session_hash] = False
-        t.join(timeout=1.0)
-            
-    if not error_occurred:
-        yield "<h3>✅ Koniec sesji.</h3>"
+    yield "<h3>Starting...</h3>"
+    yield from consume_ui_events(ui_queue, t, live_flag)
 
 with gr.Blocks(title="KeywordTensor Web") as demo:
-    gr.Markdown("# 🎙️ KeywordTensor - Wersja Chmurowa")
+    gr.Markdown("# KeywordTensor Cloud")
     
-    with gr.Accordion("👆 Krok 1: Włącz mikrofon, wybierz poprawny z listy i przetestuj", open=True) as mic_accordion:
-        audio_in = gr.Audio(sources=["microphone"], streaming=True, label="Nagrywanie w tle")
-        btn_confirm_mic = gr.Button("✅ Mikrofon działa - Przejdź dalej", variant="primary", interactive=False)
+    audio_queue_state = gr.State(lambda: queue.Queue(maxsize=100))
+    ui_queue_state = gr.State(lambda: queue.Queue())
+    live_flag_state = gr.State(lambda: [False])
+    
+    with gr.Group() as mic_group:
+        gr.Markdown("### Step 1: Select Microphone")
+        audio_in = gr.Audio(sources=["microphone"], streaming=True, label="Audio Stream")
+        btn_confirm_mic = gr.Button("Next", variant="primary", interactive=False)
         
     with gr.Group(visible=False) as menu_group:
-        gr.Markdown("### Wybierz tryb działania:")
+        gr.Markdown("### Select Mode:")
         with gr.Row():
-            btn_menu_live = gr.Button("🎙️ Detekcja na żywo", variant="primary")
-            btn_menu_admin = gr.Button("🛠️ Panel Administracyjny (Zbieranie Próbek)", variant="secondary")
+            btn_menu_live = gr.Button("Live Mode", variant="primary")
+            btn_menu_admin = gr.Button("Admin Panel", variant="secondary")
             
     with gr.Group(visible=False) as live_group:
-        btn_back_live = gr.Button("🔙 Zatrzymaj i Wróć do menu", variant="stop")
-        gr.Markdown("---")
-        btn_start_live = gr.Button("🚀 Rozpocznij Detekcję", variant="primary")
-        live_output = gr.HTML("<h2>Oczekuję na start...</h2>")
+        btn_back_live = gr.Button("Stop", variant="stop")
+        btn_start_live = gr.Button("Start", variant="primary")
+        live_output = gr.HTML("<h2>Awaiting start...</h2>")
         
     with gr.Group(visible=False) as admin_group:
-        btn_back_admin = gr.Button("🔙 Zatrzymaj i Wróć do menu", variant="stop")
-        gr.Markdown("---")
-        admin_password = gr.Textbox(label="Hasło Administracyjne", type="password")
-        btn_start_admin = gr.Button("🚀 Rozpocznij Sesję Próbek", variant="primary")
-        admin_output = gr.HTML("<h3>Oczekuję na start...</h3>")
+        btn_back_admin = gr.Button("Stop", variant="stop")
+        admin_password = gr.Textbox(label="Password", type="password")
+        btn_start_admin = gr.Button("Start", variant="primary")
+        admin_output = gr.HTML("<h3>Awaiting start...</h3>")
 
     audio_in.start_recording(
         fn=lambda: gr.update(interactive=True),
@@ -332,42 +286,36 @@ with gr.Blocks(title="KeywordTensor Web") as demo:
     )
 
     def confirm_mic():
-        return gr.update(open=False, label="✅ Mikrofon aktywny (Działa w tle)"), gr.update(visible=True)
+        return gr.update(visible=False), gr.update(visible=True)
 
     btn_confirm_mic.click(
         fn=confirm_mic,
-        outputs=[mic_accordion, menu_group]
+        outputs=[mic_group, menu_group]
     )
 
-    def on_mic_stop(request: gr.Request):
-        session = request.session_hash
-        if session in is_live:
-            is_live[session] = False
-        return gr.update(open=True, label="👆 Krok 1: Włącz mikrofon, wybierz poprawny z listy i przetestuj"), gr.update(interactive=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+    def on_mic_stop(live_flag):
+        live_flag[0] = False
+        return gr.update(visible=True), gr.update(interactive=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
 
     audio_in.stop_recording(
         fn=on_mic_stop,
-        outputs=[mic_accordion, btn_confirm_mic, menu_group, live_group, admin_group]
+        inputs=[live_flag_state],
+        outputs=[mic_group, btn_confirm_mic, menu_group, live_group, admin_group]
     )
 
-    def nav_to_live(): return gr.update(visible=False), gr.update(visible=True)
-    def nav_to_admin(): return gr.update(visible=False), gr.update(visible=True)
+    btn_menu_live.click(lambda: (gr.update(visible=False), gr.update(visible=True)), outputs=[menu_group, live_group])
+    btn_menu_admin.click(lambda: (gr.update(visible=False), gr.update(visible=True)), outputs=[menu_group, admin_group])
     
-    def nav_back(request: gr.Request):
-        session = request.session_hash
-        if session in is_live:
-            is_live[session] = False
+    def nav_back(live_flag):
+        live_flag[0] = False
         return gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(visible=True), gr.update(visible=True)
 
-    btn_menu_live.click(nav_to_live, outputs=[menu_group, live_group])
-    btn_menu_admin.click(nav_to_admin, outputs=[menu_group, admin_group])
-    
-    btn_back_live.click(nav_back, outputs=[menu_group, live_group, admin_group, btn_start_live, btn_start_admin])
-    btn_back_admin.click(nav_back, outputs=[menu_group, live_group, admin_group, btn_start_live, btn_start_admin])
+    btn_back_live.click(nav_back, inputs=[live_flag_state], outputs=[menu_group, live_group, admin_group, btn_start_live, btn_start_admin])
+    btn_back_admin.click(nav_back, inputs=[live_flag_state], outputs=[menu_group, live_group, admin_group, btn_start_live, btn_start_admin])
     
     audio_in.stream(
         fn=handle_audio_stream,
-        inputs=[audio_in]
+        inputs=[audio_in, audio_queue_state]
     )
     
     btn_start_live.click(
@@ -376,6 +324,7 @@ with gr.Blocks(title="KeywordTensor Web") as demo:
     )
     btn_start_live.click(
         fn=live_mode_generator,
+        inputs=[audio_queue_state, ui_queue_state, live_flag_state],
         outputs=[live_output]
     )
     
@@ -385,9 +334,9 @@ with gr.Blocks(title="KeywordTensor Web") as demo:
     )
     btn_start_admin.click(
         fn=admin_mode_generator,
-        inputs=[admin_password],
+        inputs=[admin_password, audio_queue_state, ui_queue_state, live_flag_state],
         outputs=[admin_output]
     )
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=8000, theme=gr.themes.Soft())
+    demo.launch(server_name="0.0.0.0", server_port=8000)
