@@ -252,14 +252,13 @@ def admin_mode_generator(password, audio_queue, ui_queue, live_flag):
     yield from consume_ui_events(ui_queue, t, live_flag)
 
 with gr.Blocks(title="KeywordTensor Web") as demo:
-    gr.Markdown("# KeywordTensor Cloud")
+    gr.Markdown("# KeywordTensor - prawda_falsz model")
     
     audio_queue_state = gr.State(lambda: queue.Queue(maxsize=100))
     ui_queue_state = gr.State(lambda: queue.Queue())
     live_flag_state = gr.State(lambda: [False])
     
-    with gr.Group() as mic_group:
-        gr.Markdown("### Step 1: Select Microphone")
+    with gr.Accordion("Step 1: Select Microphone", open=True) as mic_group:
         audio_in = gr.Audio(sources=["microphone"], streaming=True, label="Audio Stream")
         btn_confirm_mic = gr.Button("Next", variant="primary", interactive=False)
         
@@ -286,16 +285,16 @@ with gr.Blocks(title="KeywordTensor Web") as demo:
     )
 
     def confirm_mic():
-        return gr.update(visible=False), gr.update(visible=True)
+        return gr.Accordion(open=False), gr.update(visible=False), gr.update(visible=True)
 
     btn_confirm_mic.click(
         fn=confirm_mic,
-        outputs=[mic_group, menu_group]
+        outputs=[mic_group, btn_confirm_mic, menu_group]
     )
 
     def on_mic_stop(live_flag):
         live_flag[0] = False
-        return gr.update(visible=True), gr.update(interactive=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+        return gr.Accordion(open=True), gr.update(visible=True, interactive=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
 
     audio_in.stop_recording(
         fn=on_mic_stop,

@@ -27,7 +27,7 @@ KeywordTensor is built for developers who want to integrate voice commands into 
 Don't have time to record your own dataset? You can use our ready-to-go models.
 
 - **`prawda_falsz`**
-  [![Azure Web App](https://img.shields.io/badge/Azure-Web_App-0089D6?logo=microsoftazure&logoColor=white)](https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net)
+  [![Live Demo](https://img.shields.io/badge/KeywordTensor-Live%20Demo-blue?style=flat-square)](https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net)
   
   A highly robust model trained specifically to handle high-pitched children's voices and extremely noisy environments. This model was successfully deployed in a live public demonstration during the *"Noc Naukowców"* (Researchers' Night) event.
 - **More models coming soon!**
