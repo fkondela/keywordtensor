@@ -27,7 +27,7 @@ KeywordTensor is built for developers who want to integrate voice commands into 
 Don't have time to record your own dataset? You can use our ready-to-go models.
 
 - **`prawda_falsz`**
-  <a href="https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net">
+  <a href="https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net" style="text-decoration: none;">
     <img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png" height="28" style="vertical-align: middle; margin-right: 8px;" alt="KeywordTensor Logo">
     <img src="https://img.shields.io/badge/Live_Demo-0089D6?style=for-the-badge" style="vertical-align: middle;" alt="Live Demo">
   </a>

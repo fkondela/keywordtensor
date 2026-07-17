@@ -254,8 +254,35 @@ def admin_mode_generator(password, audio_queue, ui_queue, live_flag):
     yield "<h3>Starting...</h3>", gr.update(visible=False)
     yield from consume_ui_events(ui_queue, t, live_flag)
 
+custom_css = """
+.header-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    margin-bottom: 20px;
+    margin-top: 10px;
+}
+.header-container img {
+    height: 50px;
+    border-radius: 12px;
+    filter: drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.2));
+}
+.header-container h1 {
+    margin: 0;
+    color: #3b82f6 !important;
+    font-weight: bold !important;
+    font-size: 2.2em;
+}
+"""
+
 with gr.Blocks(title="KeywordTensor Web") as demo:
-    gr.Markdown("# KeywordTensor - prawda_falsz model")
+    gr.HTML('''
+    <div class="header-container">
+        <img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png" alt="KeywordTensor Logo">
+        <h1>KeywordTensor - prawda_falsz model</h1>
+    </div>
+    ''')
     
     audio_queue_state = gr.State(lambda: queue.Queue(maxsize=100))
     ui_queue_state = gr.State(lambda: queue.Queue())
@@ -333,4 +360,4 @@ with gr.Blocks(title="KeywordTensor Web") as demo:
     )
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=8000)
+    demo.launch(server_name="0.0.0.0", server_port=8000, theme=gr.themes.Soft(primary_hue="blue"), css=custom_css)
