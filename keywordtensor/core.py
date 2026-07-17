@@ -184,7 +184,7 @@ class Engine:
             )
 
 
-    def listen(self, model_name, actions=None, min_confidence=0.6, n_averages=3, source="microphone", listen_time=0):
+    def listen(self, model_name, actions=None, min_confidence=0.6, n_averages=3, source="microphone", listen_time=0, threads: int = None):
         
         if actions is None:
             actions = {}
@@ -213,7 +213,13 @@ class Engine:
         wav_to_spec = WaveformToSpectrogram(sr=sr)
         normalize_spec = NormalizeSpec(mean=cfg["mean"], std=cfg["std"])
         
-        sess = ort.InferenceSession(f"{resolved_path}.onnx")
+        if threads is not None:
+            sess_options = ort.SessionOptions()
+            sess_options.intra_op_num_threads = threads
+            sess_options.inter_op_num_threads = threads
+            sess = ort.InferenceSession(f"{resolved_path}.onnx", sess_options=sess_options)
+        else:
+            sess = ort.InferenceSession(f"{resolved_path}.onnx")
         inp_name = sess.get_inputs()[0].name
         
         buf_len = int(sr * duration)

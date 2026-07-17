@@ -102,7 +102,8 @@ def live_mode_generator(audio_queue, ui_queue, live_flag):
                 }, 
                 source=get_audio_stream(audio_queue, live_flag, sliding_window=True),
                 min_confidence=0.55,
-                n_averages=3
+                n_averages=3,
+                threads=1
             )
         except Exception as e:
             ui_queue.put(f"<h2>ERROR: {str(e)}</h2>")
@@ -350,13 +351,15 @@ with gr.Blocks(title="KeywordTensor Web") as demo:
     btn_start_live.click(
         fn=live_mode_generator,
         inputs=[audio_queue_state, ui_queue_state, live_flag_state],
-        outputs=[live_output, btn_start_live]
+        outputs=[live_output, btn_start_live],
+        concurrency_limit=100
     )
     
     btn_start_admin.click(
         fn=admin_mode_generator,
         inputs=[admin_password, audio_queue_state, ui_queue_state, live_flag_state],
-        outputs=[admin_output, btn_start_admin]
+        outputs=[admin_output, btn_start_admin],
+        concurrency_limit=100
     )
 
 if __name__ == "__main__":
