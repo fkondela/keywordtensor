@@ -215,7 +215,10 @@ def admin_mode_generator(password, audio_queue, ui_queue, live_flag):
         import numpy as np
         audio_np = tensor_data.squeeze().numpy()
         audio_np = (audio_np * 32767).clip(-32768, 32767).astype(np.int16)
-        with wave.open("/tmp/temp.wav", "w") as f:
+        
+        temp_file_path = f"/tmp/temp_{int(time.time())}_{random.randint(10000, 99999)}_{index}.wav"
+        
+        with wave.open(temp_file_path, "w") as f:
             f.setnchannels(1)
             f.setsampwidth(2)
             f.setframerate(sr)
@@ -229,7 +232,7 @@ def admin_mode_generator(password, audio_queue, ui_queue, live_flag):
             api = HfApi(token=hf_token)
             baza_nazwy = f"{klasa}/probka_{int(time.time())}_{random.randint(1000, 9999)}_{index}"
             api.upload_file(
-                path_or_fileobj="/tmp/temp.wav",
+                path_or_fileobj=temp_file_path,
                 path_in_repo=f"{baza_nazwy}.wav",
                 repo_id="fkondela/KeywordTensor_prawda_falsz", 
                 repo_type="dataset"
@@ -237,6 +240,12 @@ def admin_mode_generator(password, audio_queue, ui_queue, live_flag):
             ui_queue.put(f"<h3>Successfully uploaded: {klasa}</h3>")
         except Exception as e:
             ui_queue.put(f"<h3>ERROR: {str(e)}</h3>")
+        finally:
+            if os.path.exists(temp_file_path):
+                try:
+                    os.remove(temp_file_path)
+                except Exception:
+                    pass
 
     def thread_func():
         try:
