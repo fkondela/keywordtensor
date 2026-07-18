@@ -300,7 +300,8 @@ button[aria-label="Settings"] {
 }
 """
 
-with gr.Blocks(title="KeywordTensor Web") as demo:
+head_html = '<link rel="icon" type="image/png" href="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png">'
+with gr.Blocks(title="KeywordTensor", head=head_html) as demo:
     gr.HTML('''
     <div class="header-container">
         <img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png" alt="KeywordTensor Logo">
