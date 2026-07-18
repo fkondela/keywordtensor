@@ -10,6 +10,8 @@ import gradio as gr
 from faker import Faker
 from keywordtensor.core import Engine
 
+torch.set_num_threads(1)
+
 engine = Engine()
 fake = Faker('pl_PL')
 
@@ -31,6 +33,8 @@ def get_audio_stream(q, live_flag, sliding_window=True):
                     raw_buffer = raw_buffer[target:]
                 
                 y_tensor = torch.tensor(process_buf, dtype=torch.float32)
+                if y_tensor.abs().max() > 1.0:
+                    y_tensor = y_tensor / 32768.0
                 if sr != 16000:
                     y_tensor = torchaudio.functional.resample(y_tensor, orig_freq=sr, new_freq=16000)
                 
@@ -89,7 +93,7 @@ def live_mode_generator(audio_queue, ui_queue, live_flag):
     def falsz_cb():
         ui_queue.put("<h2>Detected: <span style='color:red'>FALSE</span></h2>")
     def other_cb():
-        ui_queue.put("<h2>Detected: <span style='color:gray'>OTHER</span></h2>")
+        ui_queue.put("<h2>Detected: <span style='color:gray'>Nasłuchuję...</span></h2>")
         
     def thread_func():
         try:
@@ -102,7 +106,7 @@ def live_mode_generator(audio_queue, ui_queue, live_flag):
                 }, 
                 source=get_audio_stream(audio_queue, live_flag, sliding_window=True),
                 min_confidence=0.55,
-                n_averages=3,
+                n_averages=1,
                 threads=1
             )
         except Exception as e:
@@ -351,7 +355,8 @@ with gr.Blocks(title="KeywordTensor Web") as demo:
     
     audio_in.stream(
         fn=handle_audio_stream,
-        inputs=[audio_in, audio_queue_state]
+        inputs=[audio_in, audio_queue_state],
+        concurrency_limit=100
     )
     
     btn_start_live.click(
