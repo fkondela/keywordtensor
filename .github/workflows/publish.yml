@@ -57,6 +57,11 @@ jobs:
           sed -i 's/name = "keywordtensor"/name = "keywordtensor-edge"/g' pyproject.toml
           sed -i 's/description = "A Python library/description = "A lightweight inference library/g' pyproject.toml
           sed -i '/"fastai"/d' pyproject.toml
+          sed -i '/"huggingface_hub"/d' pyproject.toml
+          sed -i '/"datasets"/d' pyproject.toml
+          sed -i '/"tqdm"/d' pyproject.toml
+          sed -i '/"torch-audiomentations"/d' pyproject.toml
+          sed -i '/"torchcodec"/d' pyproject.toml
           
       - name: Build keywordtensor-edge
         run: python -m build

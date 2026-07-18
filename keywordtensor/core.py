@@ -11,6 +11,10 @@ import numpy as np
 import inspect
 import queue
 import threading
+import shutil
+import random
+import tarfile
+import urllib.request
 
 try:
     import sounddevice as sd
@@ -27,9 +31,12 @@ try:
     if not hasattr(L, 'starmap'):
         L.starmap = lambda self, f: L(itertools.starmap(f, self))
     from torch_audiomentations import Compose, Shift, Gain, PolarityInversion, AddColoredNoise, PitchShift, HighPassFilter, LowPassFilter
-    HAS_FASTAI = True
+    from huggingface_hub import snapshot_download
+    import datasets
+    from tqdm import tqdm
+    IS_EDGE_VERSION = False
 except ImportError:
-    HAS_FASTAI = False
+    IS_EDGE_VERSION = True
     class Transform:
         pass
     class TensorImage:
@@ -131,16 +138,109 @@ class Engine:
     def __init__(self):
         self.model_name = None
 
-    def train(self, dataset_path, epochs=30, batch_size=32, wd=0.01, eps=0.01, valid_pct=0.1, model_name='myownmodel', duration=3.0, sr=16000):
-        if not HAS_FASTAI:
-            raise RuntimeError("Training requires fastai. Install the full package: pip install keywordtensor")
+    def train(self, dataset_path, classes: list = None, epochs=30, batch_size=32, wd=0.01, eps=0.01, valid_pct=0.1, model_path='myownmodel', duration=3.0, sr=16000):
+        if IS_EDGE_VERSION:
+            raise RuntimeError("This is the Edge version. To train, install: pip install keywordtensor[train]")
+            
+        if dataset_path == "google":
+            target_dir = Path.home() / ".cache" / "keywordtensor" / "google_speech_commands"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            if not (target_dir / "SpeechCommands").exists():
+                print("Downloading Google Speech Commands dataset (2.3 GB)...")
+                torchaudio.datasets.SPEECHCOMMANDS(root=str(target_dir), download=True)
+            dataset_path = str(target_dir)
+        elif dataset_path == "mswc":
+            target_dir = Path.home() / ".cache" / "keywordtensor" / "mswc_pl"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            if not any(target_dir.rglob("*.opus")):
+                print("Downloading Polish MSWC dataset... (This might take a while)")
+                repo_dir = snapshot_download(
+                    repo_id="MLCommons/ml_spoken_words", 
+                    repo_type="dataset", 
+                    allow_patterns="data/opus/pl/**/*.tar.gz", 
+                    token=os.environ.get("HF_TOKEN")
+                )
+                print("Extracting files...")
+                for f in Path(repo_dir).rglob("*.tar.gz"):
+                    shutil.unpack_archive(f, target_dir)
+                    
+            # Ensure files are sorted into word directories (fixes legacy cache issues)
+            for opus_file in target_dir.rglob("*.opus"):
+                word = opus_file.name.split('_')[0]
+                if opus_file.parent.name != word:
+                    word_dir = target_dir / word
+                    word_dir.mkdir(exist_ok=True)
+                    opus_file.rename(word_dir / opus_file.name)
+                    
+            dataset_path = str(target_dir)
+
+        self.model_name = model_path
         
-        self.model_name = model_name
+        other_dir = Path(dataset_path) / "other"
+        if classes and "other-mix" in classes and other_dir.exists():
+            shutil.rmtree(other_dir)
         
-        get_audio_files = partial(get_files, extensions=['.wav'])
-        files = get_audio_files(Path(dataset_path))
+        get_audio_files = partial(get_files, extensions=['.wav', '.opus'])
+        all_files = get_audio_files(Path(dataset_path))
+        
+        if len(all_files) == 0:
+            raise RuntimeError(f"No audio files found in: {dataset_path}. The download was likely interrupted. Delete this folder and try again.")
+
+        if classes:
+            if "other-mix" in classes:
+                classes = [c for c in classes if c != "other-mix"]
+                target_files = [f for f in all_files if parent_label(f) in classes]
+                
+                non_target_files = [f for f in all_files if parent_label(f) not in classes]
+                bg_files = [f for f in non_target_files if parent_label(f) == "_background_noise_"]
+                word_files = [f for f in non_target_files if parent_label(f) != "_background_noise_"]
+                
+                other_dir = Path(dataset_path) / "other"
+                other_dir.mkdir(exist_ok=True)
+                
+                num_targets = len(target_files) if len(target_files) > 0 else 1000
+                selected_others = []
+                
+                if bg_files:
+                    # 50% background noise, 50% random other words
+                    num_bg = num_targets // 2
+                    num_words = num_targets - num_bg
+                    # Background noise has very few files (e.g. 6), so we must duplicate them with random.choices
+                    selected_others.extend(random.choices(bg_files, k=num_bg))
+                    
+                    if word_files:
+                        if len(word_files) >= num_words:
+                            selected_others.extend(random.sample(word_files, num_words))
+                        else:
+                            selected_others.extend(random.choices(word_files, k=num_words))
+                else:
+                    # 100% random other words (e.g. for MSWC where no background noise folder exists)
+                    if word_files:
+                        if len(word_files) >= num_targets:
+                            selected_others.extend(random.sample(word_files, num_targets))
+                        else:
+                            selected_others.extend(random.choices(word_files, k=num_targets))
+                
+                other_files = []
+                for i, f in enumerate(selected_others):
+                    lbl = parent_label(f)
+                    # 'i' ensures unique symlink names even when files are duplicated
+                    link_path = other_dir / f"{lbl}_{i}_{f.name}"
+                    if not link_path.exists():
+                        try:
+                            link_path.symlink_to(f.absolute())
+                        except OSError:
+                            shutil.copy(f, link_path)
+                    other_files.append(link_path)
+                
+                files = L(target_files + other_files)
+                classes.append("other")
+            else:
+                files = L([f for f in all_files if parent_label(f) in classes])
+        else:
+            files = L(all_files)
+        
         splits = RandomSplitter(valid_pct=valid_pct, seed=42)(files)
-        
         norm_spec = NormalizeSpec()
         
         tfms = [
@@ -164,7 +264,7 @@ class Engine:
             "duration": float(duration),
             "sr": int(sr)
         }
-        with open(f"{model_name}_config.json", "w", encoding="utf-8") as f:
+        with open(f"{model_path}_config.json", "w", encoding="utf-8") as f:
             json.dump(config, f, ensure_ascii=False, indent=4)
 
         x, y = learn.dls.one_batch()
@@ -176,7 +276,7 @@ class Engine:
         torch.onnx.export(
             model, 
             dummy_input, 
-            f"{model_name}.onnx",
+            f"{model_path}.onnx",
             input_names=['input'],
             output_names=['output'],
             opset_version=12,
@@ -184,21 +284,21 @@ class Engine:
             )
 
 
-    def listen(self, model_name, actions=None, min_confidence=0.6, n_averages=3, source="microphone", listen_time=0, threads: int = None):
+    def listen(self, model_path, actions=None, min_confidence=0.6, n_averages=3, source="microphone", listen_time=0, threads: int = None):
         
         if actions is None:
             actions = {}
             
-        user_model_path = Path(f"{model_name}.onnx")
-        user_config_path = Path(f"{model_name}_config.json")
+        user_model_path = Path(f"{model_path}.onnx")
+        user_config_path = Path(f"{model_path}_config.json")
         
         library_dir = os.path.dirname(os.path.abspath(__file__))
-        builtin_base_path = os.path.join(library_dir, "pretrained", model_name)
+        builtin_base_path = os.path.join(library_dir, "pretrained", model_path)
         builtin_model_path = Path(f"{builtin_base_path}.onnx")
         builtin_config_path = Path(f"{builtin_base_path}_config.json")
 
         if user_model_path.exists() and user_config_path.exists():
-            resolved_path = model_name
+            resolved_path = model_path
         elif builtin_model_path.exists() and builtin_config_path.exists():
             resolved_path = builtin_base_path
             
@@ -393,7 +493,7 @@ class Engine:
                 
                 # Zabezpieczenie przed wysyłaniem uciętych/pustych nagrań
                 if tensor_data is None:
-                    print("Źródło audio zostało zamknięte. Przerywam nagrywanie.")
+                    print("Audio source closed. Stopping recording.")
                     return
 
                 if isinstance(target, str):

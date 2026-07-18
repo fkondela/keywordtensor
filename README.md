@@ -5,14 +5,19 @@
 
   [![PyPI - Version](https://img.shields.io/pypi/v/keywordtensor?style=flat-square&color=blue)](https://pypi.org/project/keywordtensor/)
   [![Python](https://img.shields.io/badge/python-3.8+-blue.svg?style=flat-square&logo=python&logoColor=white)](https://www.python.org)
-  [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
+  [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat-square)](LICENSE)
 </div>
+
+> [!NOTE]
+> **🚧 Work In Progress (WIP)**  
+> KeywordTensor is currently undergoing a major update! The README below reflects our upcoming version with new, exciting features. Please note that some of the advanced functionalities described here might not yet be fully available in the current PyPI release.
 
 ---
 
 ## ⚡ About KeywordTensor
 KeywordTensor is built for developers who want to integrate voice commands into their Python projects without requiring deep knowledge of audio processing. 
 
+- **Download public datasets** so you can choose your own words, and let KeywordTensor automatically distil them into a tiny personalized model for your device.
 - **Bring your own `.wav` files**: Just put your audio files into folders (e.g., `dataset/hello/`, `dataset/stop/`).
 - **Trigger custom Python actions**: Easily map recognized words directly to your own Python functions. No Speech-to-Text required—KeywordTensor detects predefined commands and directly triggers Python callbacks.
 - **Automated Export & Config**: Training automatically generates your optimized model and its configuration file. This allows you to launch live inference with a single command later. No manual saving required!
@@ -47,7 +52,35 @@ The library is available in two variants on PyPI depending on your needs:
 
 ---
 
-### 2. Training your model
+### 2. Creating your own dataset
+If you don't want to use public datasets, you can easily record your own voice to build a custom dataset using the built-in `.record()` tool.
+
+```python
+import keywordtensor as kt
+
+model = kt.Engine()
+
+# Record 50 samples of the word "hello" and "stop"
+model.record(
+    target="my_dataset", 
+    classes=["hello", "stop"], 
+    samples=50,
+    duration=3.0
+)
+```
+
+**Record parameters:**
+Available parameters in `.record()`:
+- `target` *(required)*: Path where the audio folders will be saved.
+- `classes` *(required)*: List of strings. Words you want to record.
+- `samples` *(default: 100)*: Number of audio samples to record per class.
+- `actions` *(default: None)*: Optional dictionary mapping words to custom visual/audio cues during recording.
+- `source` *(default: "microphone")*: Audio input source. You can use the default microphone or pass a custom generator.
+- `duration` *(default: 3.0)*: The exact duration of each audio clip in seconds.
+
+---
+
+### 3. Training your model
 The `.train()` method takes your audio files and trains a neural network using PyTorch and FastAI under the hood. 
 
 ```python
@@ -57,17 +90,19 @@ model = keywordtensor.Engine()
 
 # The engine automatically applies audio & spectrogram augmentations during training
 model.train(
-    dataset_path="path/to/audio/dataset",
-    model_name="my_custom_model",
-    epochs=30,
+    dataset_path="google",
+    classes=["up", "down", "other-mix"],
+    model_path="my_custom_model",
+    epochs=10,
     batch_size=32
 )
 ```
 
 **Training parameters:**
 You have total control over the pipeline. Available parameters in `.train()`:
-- `dataset_path` *(required)*: Path to your dataset folder. Any number of folders (classes) is supported.
-- `model_name` *(default: 'myownmodel')*: Name of the final exported model.
+- `dataset_path` *(required)*: Path to your audio dataset. You can provide a local folder path, or use one of the built-in presets: `"google"`, `"mswc"`, or `"hf:username/repo"`.
+- `classes` *(default: None)*: List of specific words (folders) you want to recognize. If `None`, trains on all available folders. **Pro-tip:** Add `"other-mix"` to the list, and the engine will automatically aggregate random words from your dataset to create a robust background noise class!
+- `model_path` *(default: 'myownmodel')*: Name of the final exported model.
 - `epochs` *(default: 30)*: Number of training cycles over your dataset.
 - `batch_size` *(default: 32)*: Number of audio samples processed simultaneously.
 - `learning_rate` *(Automatic)*: The engine dynamically searches for the optimal learning rate for your specific dataset and automatically applies the One-Cycle Policy.
@@ -79,7 +114,7 @@ You have total control over the pipeline. Available parameters in `.train()`:
 
 ---
 
-### 3. Live Inference & Custom Actions
+### 4. Live Inference & Custom Actions
 Once trained (or using a pre-trained model like `prawda_falsz`), you can run real-time inference using your microphone.
 
 ```python
@@ -96,7 +131,7 @@ def on_stop():
 
 # Map keywords to your Python functions with per-keyword cooldowns
 model.listen(
-    model_name="my_custom_model",
+    model_path="my_custom_model",
     actions={
         "hello": {"function": on_hello, "cooldown": 2.0},
         "stop": {"function": on_stop, "cooldown": 3.0}
@@ -109,17 +144,19 @@ model.listen(
 
 **Listen parameters:**
 The `.listen()` method itself accepts the following runtime arguments:
-- `model_name` *(required)*: The name of the model to load. You can provide the path to your own trained model, or use the built-in `"prawda_falsz"` model which is highly robust to noise and pitched voices.
+- `model_path` *(required)*: The name of the model to load. You can provide the path to your own trained model, or use the built-in `"prawda_falsz"` model which is highly robust to noise and pitched voices.
 - `actions` *(default: None)*: Optional dictionary mapping detected keywords to Python callbacks. You can pass just a function (defaults to 0.0s cooldown), or a dictionary for precise control: `{"function": your_function, "cooldown": 2.0}`. Cooldowns are tracked individually per keyword!
 - `min_confidence` *(default: 0.6)*: The probability threshold (0.0 to 1.0) required to trigger the action.
 - `n_averages` *(default: 3)*: Temporal smoothing. Averages the last *N* predictions to prevent false positive clicks.
 - `source` *(default: "microphone")*: Audio input source. 
   - `"microphone"` uses the default system microphone. 
   - `"microphone:1"` uses a specific microphone ID. 
-  - `my_variable` You can also pass your own Python variable (a generator) that yields current microphone audio data (arrays of Float32 at 16000Hz) to easily plug KeywordTensor into your own custom apps!
+  - `my_variable` You can also pass your own Python variable (a generator) that yields current microphone audio data (arrays of Float32 at 16000Hz) to easily plug KeywordTensor into your own custom apps (like FastAPI or Gradio)!
+- `listen_time` *(default: 0)*: How long to listen in seconds. `0` means listen forever.
+- `threads` *(default: None)*: Number of CPU threads to use for ONNX inference.
 
 **Config file parameters:**
-The rest of the underlying parameters are loaded automatically from the `<model_name>_config.json` file! 
+The rest of the underlying parameters are loaded automatically from the `<model_path>_config.json` file! 
 When you run `.train()`, this file is automatically generated for you. It looks like this:
 
 ```json

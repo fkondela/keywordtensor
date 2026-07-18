@@ -7,7 +7,7 @@ name = "keywordtensor"
 version = "1.0.5"
 description = "A Python library for training custom keyword spotting models and running real-time voice command detection."
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "Apache-2.0"}
 dependencies = [
     "numpy",
     "sounddevice",
@@ -17,7 +17,10 @@ dependencies = [
     "fastai",
     "torch-audiomentations",
     "torchcodec",
-    "onnx"
+    "onnx",
+    "huggingface_hub",
+    "datasets",
+    "tqdm"
 ]
 
 [tool.setuptools]

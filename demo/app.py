@@ -41,11 +41,13 @@ def get_audio_stream(shared_state, live_flag, sliding_window=True):
 
 def consume_ui_events(ui_queue, thread, live_flag):
     error_occurred = False
+    natural_finish = False
     try:
         while live_flag[0]:
             try:
                 msg = ui_queue.get(timeout=0.1)
                 if msg == "ZAKONCZONO":
+                    natural_finish = True
                     break
                 yield msg, gr.update(visible=False)
                 if "ERROR" in msg:
@@ -55,11 +57,15 @@ def consume_ui_events(ui_queue, thread, live_flag):
             except queue.Empty:
                 pass
     finally:
+        was_cancelled = not live_flag[0] and not natural_finish
         live_flag[0] = False
         thread.join(timeout=1.0)
         
     if not error_occurred:
-        yield "<h3>Zakończono bezpiecznie.</h3>", gr.update(visible=True)
+        if was_cancelled:
+            yield gr.update(), gr.update()
+        else:
+            yield "<h3>Zakończono bezpiecznie.</h3>", gr.update(visible=True)
 
 def handle_audio_stream(chunk, shared_state):
     if chunk is not None:
@@ -357,8 +363,8 @@ with gr.Blocks(title="KeywordTensor", head=head_html) as demo:
         outputs=[mic_group, btn_confirm_mic, menu_group, live_group, admin_group]
     )
 
-    btn_menu_live.click(lambda: (gr.update(visible=False), gr.update(visible=True)), outputs=[menu_group, live_group])
-    btn_menu_admin.click(lambda: (gr.update(visible=False), gr.update(visible=True)), outputs=[menu_group, admin_group])
+    btn_menu_live.click(lambda: (gr.update(visible=False), gr.update(visible=True), gr.update(visible=True)), outputs=[menu_group, live_group, btn_start_live])
+    btn_menu_admin.click(lambda: (gr.update(visible=False), gr.update(visible=True), gr.update(visible=True)), outputs=[menu_group, admin_group, btn_start_admin])
     
     def nav_back(live_flag):
         live_flag[0] = False
