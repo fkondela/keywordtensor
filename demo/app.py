@@ -15,32 +15,29 @@ torch.set_num_threads(1)
 engine = Engine()
 fake = Faker('pl_PL')
 
-def get_audio_stream(q, live_flag, sliding_window=True):
-    raw_buffer = []
+class SharedAudioState:
+    def __init__(self):
+        self.raw_buffer = []
+        self.latest_resampled_3s = None
+        self.lock = threading.Lock()
+        self.new_data_event = threading.Event()
+        
+    def clear(self):
+        with self.lock:
+            self.raw_buffer = []
+            self.latest_resampled_3s = None
+        self.new_data_event.clear()
+
+def get_audio_stream(shared_state, live_flag, sliding_window=True):
     while live_flag[0]:
-        try:
-            chunk = q.get(timeout=0.1)
-            sr, y_chunk = chunk
-            raw_buffer.extend(y_chunk)
+        shared_state.new_data_event.wait(timeout=0.1)
+        shared_state.new_data_event.clear()
+        
+        with shared_state.lock:
+            freshest_buf = shared_state.latest_resampled_3s
             
-            target = int(sr * 3.0)
-            if len(raw_buffer) >= target:
-                if sliding_window:
-                    raw_buffer = raw_buffer[-target:]
-                    process_buf = raw_buffer
-                else:
-                    process_buf = raw_buffer[:target]
-                    raw_buffer = raw_buffer[target:]
-                
-                y_tensor = torch.tensor(process_buf, dtype=torch.float32)
-                if y_tensor.abs().max() > 1.0:
-                    y_tensor = y_tensor / 32768.0
-                if sr != 16000:
-                    y_tensor = torchaudio.functional.resample(y_tensor, orig_freq=sr, new_freq=16000)
-                
-                yield y_tensor.numpy().tolist()
-        except queue.Empty:
-            pass
+        if freshest_buf is not None:
+            yield freshest_buf
 
 def consume_ui_events(ui_queue, thread, live_flag):
     error_occurred = False
@@ -64,7 +61,7 @@ def consume_ui_events(ui_queue, thread, live_flag):
     if not error_occurred:
         yield "<h3>Zakończono bezpiecznie.</h3>", gr.update(visible=True)
 
-def handle_audio_stream(chunk, audio_queue):
+def handle_audio_stream(chunk, shared_state):
     if chunk is not None:
         sr, y = chunk
         if y.dtype != np.float32:
@@ -72,28 +69,38 @@ def handle_audio_stream(chunk, audio_queue):
         if len(y.shape) > 1:
             y = np.mean(y, axis=1)
             
-        try:
-            audio_queue.put_nowait((sr, y.tolist()))
-        except queue.Full:
-            try:
-                audio_queue.get_nowait()
-                audio_queue.put_nowait((sr, y.tolist()))
-            except:
-                pass
+        y_chunk = y.tolist()
+        
+        with shared_state.lock:
+            shared_state.raw_buffer.extend(y_chunk)
+            target = int(sr * 3.0)
+            
+            if len(shared_state.raw_buffer) > target:
+                shared_state.raw_buffer = shared_state.raw_buffer[-target:]
+                
+            if len(shared_state.raw_buffer) >= target:
+                process_buf = shared_state.raw_buffer
+                y_tensor = torch.tensor(process_buf, dtype=torch.float32)
+                if y_tensor.abs().max() > 1.0:
+                    y_tensor = y_tensor / 32768.0
+                if sr != 16000:
+                    y_tensor = torchaudio.functional.resample(y_tensor, orig_freq=sr, new_freq=16000)
+                
+                shared_state.latest_resampled_3s = y_tensor.numpy().tolist()
+                shared_state.new_data_event.set()
 
-def live_mode_generator(audio_queue, ui_queue, live_flag):
+def live_mode_generator(shared_state, ui_queue, live_flag):
     live_flag[0] = True
-    with audio_queue.mutex:
-        audio_queue.queue.clear()
+    shared_state.clear()
     with ui_queue.mutex:
         ui_queue.queue.clear()
         
     def prawda_cb():
-        ui_queue.put("<h2>Detected: <span style='color:green'>TRUE</span></h2>")
+        ui_queue.put("<h2>Detected: <span style='color:green'>PRAWDA</span></h2>")
     def falsz_cb():
-        ui_queue.put("<h2>Detected: <span style='color:red'>FALSE</span></h2>")
+        ui_queue.put("<h2>Detected: <span style='color:red'>FAŁSZ</span></h2>")
     def other_cb():
-        ui_queue.put("<h2>Detected: <span style='color:gray'>Nasłuchuję...</span></h2>")
+        ui_queue.put("<h2>Detected: <span style='color:gray'>OTHER</span></h2>")
         
     def thread_func():
         try:
@@ -104,7 +111,7 @@ def live_mode_generator(audio_queue, ui_queue, live_flag):
                     "falsz": {"function": falsz_cb, "cooldown": 3.0},
                     "other": {"function": other_cb, "cooldown": 0.0}
                 }, 
-                source=get_audio_stream(audio_queue, live_flag, sliding_window=True),
+                source=get_audio_stream(shared_state, live_flag, sliding_window=True),
                 min_confidence=0.55,
                 n_averages=1,
                 threads=1
@@ -115,18 +122,17 @@ def live_mode_generator(audio_queue, ui_queue, live_flag):
     t = threading.Thread(target=thread_func)
     t.start()
     
-    yield "<h2>Awaiting detection... (Speak into microphone)</h2>", gr.update(visible=False)
+    yield "<h2>Detected: <span style='color:gray'>OTHER</span></h2>", gr.update(visible=False)
     yield from consume_ui_events(ui_queue, t, live_flag)
 
-def admin_mode_generator(password, audio_queue, ui_queue, live_flag):
+def admin_mode_generator(password, shared_state, ui_queue, live_flag):
     expected_password = os.environ.get("ADMIN_PASS", "dev123")
     if password != expected_password:
         yield "<h3>Invalid Password!</h3>", gr.update(visible=True)
         return
         
     live_flag[0] = True
-    with audio_queue.mutex:
-        audio_queue.queue.clear()
+    shared_state.clear()
     with ui_queue.mutex:
         ui_queue.queue.clear()
         
@@ -166,8 +172,7 @@ def admin_mode_generator(password, audio_queue, ui_queue, live_flag):
 
     def tworz_akcje(klasa):
         def akcja(start_callback):
-            with audio_queue.mutex:
-                audio_queue.queue.clear()
+            shared_state.clear()
                 
             timeline = zbuduj_timeline(klasa)
             plan_str = " | ".join([f"**[{z['start']:.1f}s]** {z['tekst']}" for z in timeline])
@@ -181,9 +186,8 @@ def admin_mode_generator(password, audio_queue, ui_queue, live_flag):
                 if not live_flag[0]: return
                 ui_queue.put(f"<h3>Start in {i}...</h3>")
                 time.sleep(1.0)
-                
-            with audio_queue.mutex:
-                audio_queue.queue.clear()
+            
+            shared_state.clear()
                 
             start_callback()
             start_nagrania = time.time()
@@ -254,7 +258,7 @@ def admin_mode_generator(password, audio_queue, ui_queue, live_flag):
                 classes=["prawda", "falsz"],
                 samples=2,
                 actions=moje_akcje,
-                source=get_audio_stream(audio_queue, live_flag, sliding_window=False),
+                source=get_audio_stream(shared_state, live_flag, sliding_window=False),
                 duration=3.0
             )
             ui_queue.put("ZAKONCZONO")
@@ -304,7 +308,7 @@ with gr.Blocks(title="KeywordTensor Web") as demo:
     </div>
     ''')
     
-    audio_queue_state = gr.State(lambda: queue.Queue(maxsize=100))
+    audio_queue_state = gr.State(lambda: SharedAudioState())
     ui_queue_state = gr.State(lambda: queue.Queue())
     live_flag_state = gr.State(lambda: [False])
     
