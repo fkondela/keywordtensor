@@ -18,9 +18,7 @@ dependencies = [
     "torch-audiomentations",
     "torchcodec",
     "onnx",
-    "huggingface_hub",
-    "datasets",
-    "tqdm"
+    "huggingface_hub"
 ]
 
 [tool.setuptools]

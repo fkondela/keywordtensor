@@ -1,3 +1,5 @@
+
+#wszystkie importy
 import json
 import torch
 import torchaudio
@@ -11,10 +13,9 @@ import numpy as np
 import inspect
 import queue
 import threading
-import shutil
 import random
-import tarfile
-import urllib.request
+import sys
+import contextlib
 
 try:
     import sounddevice as sd
@@ -22,7 +23,6 @@ try:
 except ImportError:
     HAS_SOUNDDEVICE = False
     sd = None
-
 
 try:
     from fastai.vision.all import *
@@ -32,8 +32,6 @@ try:
         L.starmap = lambda self, f: L(itertools.starmap(f, self))
     from torch_audiomentations import Compose, Shift, Gain, PolarityInversion, AddColoredNoise, PitchShift, HighPassFilter, LowPassFilter
     from huggingface_hub import snapshot_download
-    import datasets
-    from tqdm import tqdm
     IS_EDGE_VERSION = False
 except ImportError:
     IS_EDGE_VERSION = True
@@ -46,13 +44,21 @@ except ImportError:
         pass
 
 
+
+
+
+
 #zamiana pliku na falę dźwiękową
 class LoadAudio(Transform):
-    def __init__(self, duration=3.0):
+    def __init__(self, sr=16000, duration=3.0):
+        self.sr = sr
         self.duration = duration
 
     def encodes(self, file: Path):
         waveform, sr = torchaudio.load(file)
+        if sr != self.sr:
+            waveform = torchaudio.functional.resample(waveform, orig_freq=sr, new_freq=self.sr)
+            sr = self.sr
         target_length = int(self.duration * sr)
         if waveform.shape[1] > target_length:
             waveform = waveform[:, :target_length]
@@ -116,8 +122,10 @@ class NormalizeSpec(Transform):
         self.std = std
 
     def setups(self, items):
+        if len(items) > 1000:
+            items = [items[i] for i in random.sample(range(len(items)), 1000)]
         sum_x, sum_x2, n = 0.0, 0.0, 0
-        for x in items:
+        for x in progress_bar(items):
             sum_x += x.sum().item()
             sum_x2 += (x**2).sum().item()
             n += x.numel()
@@ -131,129 +139,110 @@ class NormalizeSpec(Transform):
     #def decodes(self, spec: AudioSpectrogram):
         #denormalized = (spec * self.std) + self.mean
         #return AudioSpectrogram(denormalized)
-        
 
+
+
+
+
+
+#przygotowanie plikow do treningu i tworzenie klasy other gdy nazwa zawiera "mixed:"
+def prepare_files(files_paths, classes, label_func):
+    if isinstance(files_paths, (str, Path)): files_paths = [files_paths]
+    
+    all_items = []
+    for p in files_paths:
+        all_items.extend([(f, label_func(f)) for f in get_files(Path(p), extensions=['.wav', '.opus'])])
+    all_items = L(all_items)
+    if classes is None: return all_items, list(set([item[1] for item in all_items]))
+    classes_fixed = [c.replace("mixed:", "") for c in classes]
+    for c in classes_fixed: assert any(item[1] == c for item in all_items), f"Error: Found 0 files for class '{c}'"
+    
+    all_other_items = L([item for item in all_items if item[1] not in classes_fixed])
+    all_classes_items = L([item for item in all_items if item[1] in classes_fixed])
+
+    for orig_class, fixed_class in zip(classes, classes_fixed):
+        if orig_class != fixed_class:
+            noise_items = L([item for item in all_classes_items if item[1] == fixed_class])
+            
+            normal_classes = [f for o, f in zip(classes, classes_fixed) if o == f]
+            target_n = len([item for item in all_classes_items if item[1] == normal_classes[0]])
+            
+            all_classes_items = L([item for item in all_classes_items if item[1] != fixed_class])
+            
+            if not noise_items:
+                mixed_items = random.choices(all_other_items, k=target_n)
+            elif not all_other_items:
+                mixed_items = random.choices(noise_items, k=target_n)
+            else:
+                num_half = target_n // 2
+                kept_noise = random.choices(noise_items, k=num_half)
+                new_noise = random.choices(all_other_items, k=target_n - num_half)
+                mixed_items = kept_noise + new_noise
+                
+            mixed_items = L([(item[0], orig_class) for item in mixed_items])
+            all_classes_items += mixed_items
+    return all_classes_items, classes
+
+#pobieranie danych z: google, mswc, linku, hf, lub folderu
+def resolve_dataset(dataset):
+    urls = []
+    paths = []
+    label_func = parent_label
+    
+    if dataset == "google":
+        label_func = lambda f: 'other' if 'ESC-50' in str(f) or 'TigreGotico' in str(f) else parent_label(f)
+        urls = ["http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz"]
+        paths.append(Path(snapshot_download(repo_id="TigreGotico/ESC-50", repo_type="dataset")))
+    elif dataset.startswith("mswc"):
+        label_func = lambda f: 'other' if 'ESC-50' in str(f) or 'TigreGotico' in str(f) else f.name.split('_')[0]
+        parts = list(dataset[4:]) or list("012345")
+        urls = [f"https://huggingface.co/datasets/MLCommons/ml_spoken_words/resolve/main/data/opus/pl/train/audio/{p}.tar.gz" for p in parts]
+        paths.append(Path(snapshot_download(repo_id="TigreGotico/ESC-50", repo_type="dataset")))
+    elif dataset.startswith("http"):
+        urls = [dataset]
+        
+    if urls:
+        for u in urls: 
+            paths.append(untar_data(u))
+    elif dataset.startswith("hf:"):
+        paths = [Path(snapshot_download(repo_id=dataset[3:], repo_type="dataset"))]
+    else:
+        paths = [Path(dataset)]
+
+    return paths, label_func
+
+
+
+
+
+    
 #klasa gdy ktos chce trenowac swoj wlasny model, a nie korzystac z wbudowanych wytrenowanych przykladow 
 class Engine:
     def __init__(self):
         self.model_name = None
 
-    def train(self, dataset_path, classes: list = None, epochs=30, batch_size=32, wd=0.01, eps=0.01, valid_pct=0.1, model_path='myownmodel', duration=3.0, sr=16000):
+    def train(self, dataset, classes: list = None, epochs=30, batch_size=32, wd=0.01, eps=0.01, valid_pct=0.1, model_path='myownmodel', duration=3.0, sr=16000):
         if IS_EDGE_VERSION:
             raise RuntimeError("This is the Edge version. To train, install: pip install keywordtensor[train]")
-            
-        if dataset_path == "google":
-            target_dir = Path.home() / ".cache" / "keywordtensor" / "google_speech_commands"
-            target_dir.mkdir(parents=True, exist_ok=True)
-            if not (target_dir / "SpeechCommands").exists():
-                print("Downloading Google Speech Commands dataset (2.3 GB)...")
-                torchaudio.datasets.SPEECHCOMMANDS(root=str(target_dir), download=True)
-            dataset_path = str(target_dir)
-        elif dataset_path == "mswc":
-            target_dir = Path.home() / ".cache" / "keywordtensor" / "mswc_pl"
-            target_dir.mkdir(parents=True, exist_ok=True)
-            if not any(target_dir.rglob("*.opus")):
-                print("Downloading Polish MSWC dataset... (This might take a while)")
-                repo_dir = snapshot_download(
-                    repo_id="MLCommons/ml_spoken_words", 
-                    repo_type="dataset", 
-                    allow_patterns="data/opus/pl/**/*.tar.gz", 
-                    token=os.environ.get("HF_TOKEN")
-                )
-                print("Extracting files...")
-                for f in Path(repo_dir).rglob("*.tar.gz"):
-                    shutil.unpack_archive(f, target_dir)
-                    
-            # Ensure files are sorted into word directories (fixes legacy cache issues)
-            for opus_file in target_dir.rglob("*.opus"):
-                word = opus_file.name.split('_')[0]
-                if opus_file.parent.name != word:
-                    word_dir = target_dir / word
-                    word_dir.mkdir(exist_ok=True)
-                    opus_file.rename(word_dir / opus_file.name)
-                    
-            dataset_path = str(target_dir)
 
+        dataset_path, label_func = resolve_dataset(dataset)
+        items, classes = prepare_files(dataset_path, classes, label_func)
         self.model_name = model_path
         
-        other_dir = Path(dataset_path) / "other"
-        if classes and "other-mix" in classes and other_dir.exists():
-            shutil.rmtree(other_dir)
-        
-        get_audio_files = partial(get_files, extensions=['.wav', '.opus'])
-        all_files = get_audio_files(Path(dataset_path))
-        
-        if len(all_files) == 0:
-            raise RuntimeError(f"No audio files found in: {dataset_path}. The download was likely interrupted. Delete this folder and try again.")
-
-        if classes:
-            if "other-mix" in classes:
-                classes = [c for c in classes if c != "other-mix"]
-                target_files = [f for f in all_files if parent_label(f) in classes]
-                
-                non_target_files = [f for f in all_files if parent_label(f) not in classes]
-                bg_files = [f for f in non_target_files if parent_label(f) == "_background_noise_"]
-                word_files = [f for f in non_target_files if parent_label(f) != "_background_noise_"]
-                
-                other_dir = Path(dataset_path) / "other"
-                other_dir.mkdir(exist_ok=True)
-                
-                num_targets = len(target_files) if len(target_files) > 0 else 1000
-                selected_others = []
-                
-                if bg_files:
-                    # 50% background noise, 50% random other words
-                    num_bg = num_targets // 2
-                    num_words = num_targets - num_bg
-                    # Background noise has very few files (e.g. 6), so we must duplicate them with random.choices
-                    selected_others.extend(random.choices(bg_files, k=num_bg))
-                    
-                    if word_files:
-                        if len(word_files) >= num_words:
-                            selected_others.extend(random.sample(word_files, num_words))
-                        else:
-                            selected_others.extend(random.choices(word_files, k=num_words))
-                else:
-                    # 100% random other words (e.g. for MSWC where no background noise folder exists)
-                    if word_files:
-                        if len(word_files) >= num_targets:
-                            selected_others.extend(random.sample(word_files, num_targets))
-                        else:
-                            selected_others.extend(random.choices(word_files, k=num_targets))
-                
-                other_files = []
-                for i, f in enumerate(selected_others):
-                    lbl = parent_label(f)
-                    # 'i' ensures unique symlink names even when files are duplicated
-                    link_path = other_dir / f"{lbl}_{i}_{f.name}"
-                    if not link_path.exists():
-                        try:
-                            link_path.symlink_to(f.absolute())
-                        except OSError:
-                            shutil.copy(f, link_path)
-                    other_files.append(link_path)
-                
-                files = L(target_files + other_files)
-                classes.append("other")
-            else:
-                files = L([f for f in all_files if parent_label(f) in classes])
-        else:
-            files = L(all_files)
-        
-        splits = RandomSplitter(valid_pct=valid_pct, seed=42)(files)
+        splits = RandomSplitter(valid_pct=valid_pct, seed=42)(items)
         norm_spec = NormalizeSpec()
         
         tfms = [
-                [LoadAudio(duration=duration), AudioAugment(sr=sr), WaveformToSpectrogram(sr=sr), norm_spec, SpecAugment()],
-                [parent_label, Categorize()]
+                [ItemGetter(0), LoadAudio(sr=sr, duration=duration), AudioAugment(sr=sr), WaveformToSpectrogram(sr=sr), norm_spec, SpecAugment()],
+                [ItemGetter(1), Categorize()]
                 ]
-        dsets = Datasets(files, tfms, splits=splits)
+        dsets = Datasets(items, tfms, splits=splits)
         dls = dsets.dataloaders(bs=batch_size)
 
         model = xresnet18(c_in=1, n_out=len(dls.vocab), pretrained=False)
         learn = Learner(dls, model, wd=wd, metrics=accuracy, loss_func=LabelSmoothingCrossEntropy(eps=eps))
         
-        res = learn.lr_find()
+        res = learn.lr_find(show_plot=False)
         base_lr = res.valley
         learn.fit_one_cycle(epochs, lr_max=slice(base_lr/10, base_lr))
 
@@ -284,6 +273,20 @@ class Engine:
             )
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+#here
     def listen(self, model_path, actions=None, min_confidence=0.6, n_averages=3, source="microphone", listen_time=0, threads: int = None):
         
         if actions is None:
