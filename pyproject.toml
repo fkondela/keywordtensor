@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0", "setuptools_scm[toml]>=8.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "keywordtensor"
-version = "1.0.5"
+dynamic = ["version"]
 description = "A Python library for training custom keyword spotting models and running real-time voice command detection."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -26,3 +26,5 @@ packages = ["keywordtensor", "keywordtensor.pretrained"]
 
 [tool.setuptools.package-data]
 "keywordtensor.pretrained" = ["*.onnx", "*.json"]
+
+[tool.setuptools_scm]
