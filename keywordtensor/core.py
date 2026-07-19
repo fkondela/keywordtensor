@@ -193,9 +193,9 @@ def resolve_dataset(dataset):
         label_func = lambda f: 'other' if 'ESC-50' in str(f) or 'TigreGotico' in str(f) else parent_label(f)
         urls = ["http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz"]
         paths.append(Path(snapshot_download(repo_id="TigreGotico/ESC-50", repo_type="dataset")))
-    elif dataset.startswith("mswc"):
+    elif dataset == "mswc":
         label_func = lambda f: 'other' if 'ESC-50' in str(f) or 'TigreGotico' in str(f) else f.name.split('_')[0]
-        parts = list(dataset[4:]) or list("012345")
+        parts = list("012345")
         urls = [f"https://huggingface.co/datasets/MLCommons/ml_spoken_words/resolve/main/data/opus/pl/train/audio/{p}.tar.gz" for p in parts]
         paths.append(Path(snapshot_download(repo_id="TigreGotico/ESC-50", repo_type="dataset")))
     elif dataset.startswith("http"):

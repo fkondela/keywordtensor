@@ -8,10 +8,6 @@
   [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat-square)](LICENSE)
 </div>
 
-> [!NOTE]
-> **🚧 Work In Progress (WIP)**  
-> KeywordTensor is currently undergoing a major update! The README below reflects our upcoming version with new, exciting features. Please note that some of the advanced functionalities described here might not yet be fully available in the current PyPI release.
-
 ---
 
 ## ⚡ About KeywordTensor
@@ -90,8 +86,8 @@ model = keywordtensor.Engine()
 
 # The engine automatically applies audio & spectrogram augmentations during training
 model.train(
-    dataset_path="google",
-    classes=["up", "down", "other-mix"],
+    dataset="google",
+    classes=["up", "down", "mixed:other"],
     model_path="my_custom_model",
     epochs=10,
     batch_size=32
@@ -100,8 +96,8 @@ model.train(
 
 **Training parameters:**
 You have total control over the pipeline. Available parameters in `.train()`:
-- `dataset_path` *(required)*: Path to your audio dataset. You can provide a local folder path, or use one of the built-in presets: `"google"`, `"mswc"`, or `"hf:username/repo"`.
-- `classes` *(default: None)*: List of specific words (folders) you want to recognize. If `None`, trains on all available folders. **Pro-tip:** Add `"other-mix"` to the list, and the engine will automatically aggregate random words from your dataset to create a robust background noise class!
+- `dataset` *(required)*: Path to your audio dataset. You can provide a local folder path, or use one of the built-in presets: `"google"`, `"mswc"`, or `"hf:username/repo"`.
+- `classes` *(default: None)*: List of specific words (folders) you want to recognize. If `None`, trains on all available folders. **Pro-tip:** Add `"mixed:other"` to the list, and the engine will automatically aggregate random words from your dataset to create a robust background noise class!
 - `model_path` *(default: 'myownmodel')*: Name of the final exported model.
 - `epochs` *(default: 30)*: Number of training cycles over your dataset.
 - `batch_size` *(default: 32)*: Number of audio samples processed simultaneously.
