@@ -8,6 +8,7 @@ import onnxruntime as ort
 from pathlib import Path
 import os
 import time
+import uuid
 from collections import deque
 import numpy as np
 import inspect
@@ -277,45 +278,28 @@ class Engine:
 
 
 
-
-
-
-
-
-
-
-
-
-#here
     def listen(self, model_path, actions=None, min_confidence=0.6, n_averages=3, source="microphone", listen_time=0, threads: int = None):
-        
-        if actions is None:
-            actions = {}
-            
+
+        #wczytanie pliku config oraz modelu
         user_model_path = Path(f"{model_path}.onnx")
         user_config_path = Path(f"{model_path}_config.json")
-        
         library_dir = os.path.dirname(os.path.abspath(__file__))
         builtin_base_path = os.path.join(library_dir, "pretrained", model_path)
         builtin_model_path = Path(f"{builtin_base_path}.onnx")
         builtin_config_path = Path(f"{builtin_base_path}_config.json")
-
         if user_model_path.exists() and user_config_path.exists():
             resolved_path = model_path
         elif builtin_model_path.exists() and builtin_config_path.exists():
             resolved_path = builtin_base_path
-            
         with open(f"{resolved_path}_config.json", "r", encoding="utf-8") as f:
             cfg = json.load(f)
-            
         labels = cfg["labels"]
         sr = cfg["sr"]
         duration = cfg["duration"]
-        cooldown = cfg.get("cooldown", 2.0)
-        
-        wav_to_spec = WaveformToSpectrogram(sr=sr)
-        normalize_spec = NormalizeSpec(mean=cfg["mean"], std=cfg["std"])
-        
+        mean = cfg["mean"]
+        std = cfg["std"]
+
+        #ilosć watkow do wykorzystania przez model
         if threads is not None:
             sess_options = ort.SessionOptions()
             sess_options.intra_op_num_threads = threads
@@ -324,183 +308,158 @@ class Engine:
         else:
             sess = ort.InferenceSession(f"{resolved_path}.onnx")
         inp_name = sess.get_inputs()[0].name
-        
-        buf_len = int(sr * duration)
-        audio_buffer = deque([0.0] * buf_len, maxlen=buf_len)
-        prediction_history = deque(maxlen=n_averages)
-        last_trigger_times = {}
-        
-        def get_probabilities(wav_tensor):
+
+        #wybor numeru mikrofonu
+        device_id = None
+        if source.startswith("microphone:"):
+            try:
+                device_id = int(source.split(":")[1])
+            except ValueError:
+                pass
+
+        #tworzenie buforu audio z mikrofonu lub zmiennej uzytkownika
+        length_in_samples = int(sr * duration)
+        bufor_audio = deque([0.0] * length_in_samples, maxlen=length_in_samples)
+        stream = None
+        if source.startswith("microphone"):
+            def audio_callback(indata, frames, time_info, status):
+                bufor_audio.extend(indata[:, 0].tolist())
+            stream = sd.InputStream(samplerate=sr, channels=1, dtype='float32', device=device_id, callback=audio_callback)
+            stream.start()
+        else:
+            bufor_audio = source
+
+        #predykcja z podanego bufora audio z uwzglednieniem resamplingu
+        wav_to_spec = WaveformToSpectrogram(sr=sr)
+        normalize_spec = NormalizeSpec(mean=mean, std=std)
+        def predict(bufor_audio):
+            if isinstance(bufor_audio, tuple):
+                original_sr, audio_data = bufor_audio
+                wav_tensor = torch.tensor(audio_data, dtype=torch.float32)
+                if original_sr != sr:
+                    wav_tensor = torchaudio.functional.resample(wav_tensor.unsqueeze(0), orig_freq=original_sr, new_freq=sr).squeeze(0)
+            else:
+                wav_tensor = torch.tensor(list(bufor_audio), dtype=torch.float32)
             spectrogram = wav_to_spec.encodes(wav_tensor)
             spectrogram = normalize_spec.encodes(spectrogram)
             onnx_data = spectrogram.unsqueeze(0).unsqueeze(0).numpy()
-            
             logits = sess.run(None, {inp_name: onnx_data})[0][0]
             exp_res = np.exp(logits - np.max(logits))
             probs = exp_res / exp_res.sum()
             return {label: float(prob) for label, prob in zip(labels, probs)}
 
-        if listen_time == -1:
-            wav_tensor = torch.tensor(source, dtype=torch.float32)
-            if len(wav_tensor) > buf_len:
-                wav_tensor = wav_tensor[-buf_len:]
-            elif len(wav_tensor) < buf_len:
-                wav_tensor = torch.nn.functional.pad(wav_tensor, (0, buf_len - len(wav_tensor)))
-            return get_probabilities(wav_tensor)
-
-        def _run_inference(current_buffer):
-            wav_tensor = torch.tensor(current_buffer, dtype=torch.float32)
-            wyniki = get_probabilities(wav_tensor)
-            
-            probs = [wyniki[l] for l in labels]
+        #obsluga predykcji i wywolanie akcji
+        prediction_history = deque(maxlen=n_averages)
+        def process_actions(probs):
+            if not probs:
+                return
             prediction_history.append(probs)
-            
-            if len(prediction_history) == n_averages:
-                mean_probs = np.mean(prediction_history, axis=0)
-                idx = np.argmax(mean_probs)
-                confidence = mean_probs[idx]
-                predicted_class = labels[idx]
+            if len(prediction_history) < n_averages:
+                return
+            mean_probs = {}
+            for label in labels:
+                total = sum(hist[label] for hist in prediction_history)
+                mean_probs[label] = total / n_averages
+            best_word = max(mean_probs, key=mean_probs.get)
+            confidence = mean_probs[best_word]
+            if confidence > min_confidence:
+                if not actions:
+                    print(f"Recognized: {best_word} ({confidence:.2f})")
+                    prediction_history.clear()
+                    time.sleep(duration)
+                elif best_word in actions:
+                    actions[best_word]()
+                    prediction_history.clear()
 
-                if confidence > min_confidence:
-                    if predicted_class in actions:
-                        action_val = actions[predicted_class]
-                        
-                        if callable(action_val):
-                            func = action_val
-                            current_cooldown = 0.0
-                        else:
-                            func = action_val.get("function")
-                            current_cooldown = action_val.get("cooldown", cooldown)
-                            
-                        last_time = last_trigger_times.get(predicted_class, 0.0)
-                        
-                        if func and (time.time() - last_time >= current_cooldown):
-                            func()
-                            prediction_history.clear()
-                            last_trigger_times[predicted_class] = time.time()
-
-        stream = None
-        
-        is_mic = isinstance(source, str) and source.startswith("microphone")
-        
-        if is_mic:
-            if not HAS_SOUNDDEVICE:
-                raise RuntimeError("Live listening requires sounddevice. Install it via pip: pip install sounddevice")
-            
-            device_id = None
-            if ":" in source:
-                try:
-                    device_id = int(source.split(":")[1])
-                except ValueError:
-                    pass
-                    
-            def _audio_callback(indata, frames, time_info, status):
-                audio_buffer.extend(indata[:, 0].tolist())
-                
-            stream = sd.InputStream(samplerate=sr, channels=1, device=device_id, callback=_audio_callback)
-            stream.start()
-        else:
-            if not hasattr(source, "__iter__") and not hasattr(source, "__next__"):
-                raise ValueError("Source must be 'microphone' or an iterable/generator of audio samples.")
-            iterator_source = iter(source)
-            
-            def _generator_thread():
-                for chunk in iterator_source:
-                    if chunk is not None:
-                        audio_buffer.extend(chunk)
-            
-            t = threading.Thread(target=_generator_thread, daemon=True)
-            t.start()
-
+        #petla do obslugi nasluchu
         start_time = time.time()
+        time.sleep(duration)
         try:
-            # Czekamy na pierwsze pełne napełnienie bufora, by nie analizować zer
-            time.sleep(duration)
-            
-            while True:
-                if listen_time > 0 and (time.time() - start_time) >= listen_time:
-                    break
-                
-                # Zabezpieczenie przed nieskończonym wyciekiem CPU na serwerze!
-                if not is_mic and not t.is_alive():
-                    break
-                
-                _run_inference(list(audio_buffer))
-                time.sleep(0.05)
-
+            if listen_time > 0:
+                while (time.time() - start_time) <= listen_time:
+                    probs = predict(bufor_audio)
+                    process_actions(probs)
+                    time.sleep(0.05)
+            elif listen_time == 0:
+                probs = predict(bufor_audio)
+                print(probs)
+            elif listen_time == -1:
+                while True:
+                    probs = predict(bufor_audio)
+                    process_actions(probs)
+                    time.sleep(0.05)
         finally:
             if stream is not None:
                 stream.stop()
                 stream.close()
 
-    def record(self, target, classes: list, samples: int = 100, actions: dict = None, source="microphone", duration: float = 3.0):
+
+
+
+
+
+    def record(self, target, classes: list, samples: int = 100, actions: dict = None, source="microphone", duration:float = 3.0, sr=16000):
+        length_in_samples = int(sr * duration)
+
+        device_id = None
+        if source.startswith("microphone:"):
+            try:
+                device_id = int(source.split(":")[1])
+            except ValueError:
+                pass
+
         if actions is None:
             actions = {}
-            
-        sr = 16000
-        total_samples = int(sr * duration)
-        is_mic = isinstance(source, str) and source.startswith("microphone")
-        device_id = None
-        
-        if is_mic:
-            if not HAS_SOUNDDEVICE:
-                raise RuntimeError("Live recording requires sounddevice.")
-            if ":" in source:
-                try:
-                    device_id = int(source.split(":")[1])
-                except ValueError:
-                    pass
-        else:
-            if not hasattr(source, "__iter__") and not hasattr(source, "__next__"):
-                raise ValueError("Source must be an iterable/generator.")
-            iterator_source = iter(source)
-        
-        if isinstance(target, str):
-            for cls in classes:
-                os.makedirs(os.path.join(target, cls), exist_ok=True)
 
-        for i in range(samples):
-            for cls in classes:
-                tensor_container = []
+        for cls in classes:
+            for i in range(samples):
                 
-                def watek_nagrywania():
-                    if is_mic:
-                        audio_data = sd.rec(total_samples, samplerate=sr, channels=1, dtype='float32', device=device_id)
-                        sd.wait()
-                        tensor_data = torch.tensor(audio_data, dtype=torch.float32).T
-                        tensor_container.append(tensor_data)
+                bufor_audio = None 
+                start_time = None  
+                def record_in_background():
+                    nonlocal bufor_audio
+                    if source.startswith("microphone"):
+                        bufor_audio = sd.rec(length_in_samples, samplerate=sr, channels=1, dtype='float32',device=device_id)
+                        sd.wait() 
                     else:
-                        try:
-                            chunk = next(iterator_source)
-                            chunk = chunk[:total_samples]
-                            tensor_data = torch.tensor(chunk, dtype=torch.float32).unsqueeze(0)
-                            tensor_container.append(tensor_data)
-                        except StopIteration:
-                            tensor_container.append(None)
+                        time.sleep(duration)
+                        bufor_audio = source
 
-                t = threading.Thread(target=watek_nagrywania)
-                
-                if cls in actions:
-                    sig = inspect.signature(actions[cls])
-                    if "start_callback" in sig.parameters:
-                        actions[cls](start_callback=t.start)
-                    else:
-                        t.start()
-                        actions[cls]()
-                else:
+                t = threading.Thread(target=record_in_background)
+
+                def start_recording():
+                    nonlocal start_time
+                    start_time = time.time()
                     t.start()
-                    print(f"[{cls.upper()}] {i+1}/{samples}")
                     
+
+                def current_time():
+                    if start_time is None: return 0.0
+                    return time.time() - start_time
+
+                if cls in actions:
+                    actions[cls](start_recording=start_recording, current_time=current_time, total_time=duration)
+                else:
+                    print(f"Recording sample {i} for [{cls}]...")
+                    t.start()             
                 t.join()
-                tensor_data = tensor_container[0]
-                
-                # Zabezpieczenie przed wysyłaniem uciętych/pustych nagrań
-                if tensor_data is None:
-                    print("Audio source closed. Stopping recording.")
-                    return
+
+                if isinstance(bufor_audio, tuple):
+                    original_sr, audio_data = bufor_audio
+                    tensor_data = torch.tensor(audio_data, dtype=torch.float32).T
+                    if original_sr != sr:
+                        tensor_data = torchaudio.functional.resample(tensor_data, orig_freq=original_sr, new_freq=sr)
+                else:
+                    tensor_data = torch.tensor(bufor_audio, dtype=torch.float32).T
 
                 if isinstance(target, str):
-                    save_path = os.path.join(target, cls, f"{i}.wav")
+                    folder_path = os.path.join(target, cls)
+                    os.makedirs(folder_path, exist_ok=True)
+                    save_path = os.path.join(target, cls, f"{i}_{uuid.uuid4().hex[:6]}.wav")
                     torchaudio.save(save_path, tensor_data, sr)
-                elif callable(target):
+                else:
                     target(cls, i, tensor_data, sr)
+                
+
+
+
