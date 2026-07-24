@@ -50,17 +50,23 @@ def handle_audio_stream(chunk, state):
         sr, y = chunk
         if state.sr is None:
             state.sr = sr
+            state.buffer = [0.0] * int(sr * 3.0)
+            
         if y.dtype != np.float32:
             y = y.astype(np.float32) / 32768.0
         if len(y.shape) > 1:
             y = np.mean(y, axis=1)
-        y = y.reshape(-1, 1)
+            
+        y_list = y.tolist()
+        shift = len(y_list)
+        target = int(state.sr * 3.0)
         
         with state.lock:
-            state.buffer.extend(y.tolist())
-            target = int(state.sr * 3.0)
-            if len(state.buffer) > target:
-                del state.buffer[:-target]
+            if shift >= target:
+                state.buffer[:] = y_list[-target:]
+            else:
+                state.buffer[:-shift] = state.buffer[shift:]
+                state.buffer[-shift:] = y_list
 
 def live_mode(state, ui_queue, live_flag):
     live_flag[0] = True

@@ -311,7 +311,7 @@ class Engine:
 
         #wybor numeru mikrofonu
         device_id = None
-        if source.startswith("microphone:"):
+        if isinstance(source, str) and source.startswith("microphone:"):
             try:
                 device_id = int(source.split(":")[1])
             except ValueError:
@@ -321,7 +321,7 @@ class Engine:
         length_in_samples = int(sr * duration)
         bufor_audio = deque([0.0] * length_in_samples, maxlen=length_in_samples)
         stream = None
-        if source.startswith("microphone"):
+        if isinstance(source, str) and source.startswith("microphone"):
             def audio_callback(indata, frames, time_info, status):
                 bufor_audio.extend(indata[:, 0].tolist())
             stream = sd.InputStream(samplerate=sr, channels=1, dtype='float32', device=device_id, callback=audio_callback)
@@ -402,7 +402,7 @@ class Engine:
         length_in_samples = int(sr * duration)
 
         device_id = None
-        if source.startswith("microphone:"):
+        if isinstance(source, str) and source.startswith("microphone:"):
             try:
                 device_id = int(source.split(":")[1])
             except ValueError:
@@ -418,7 +418,7 @@ class Engine:
                 start_time = None  
                 def record_in_background():
                     nonlocal bufor_audio
-                    if source.startswith("microphone"):
+                    if isinstance(source, str) and source.startswith("microphone"):
                         bufor_audio = sd.rec(length_in_samples, samplerate=sr, channels=1, dtype='float32',device=device_id)
                         sd.wait() 
                     else:
