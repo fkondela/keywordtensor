@@ -214,12 +214,13 @@ def admin_mode(password, state, ui_queue, live_flag):
                 ui_queue.put("<h3>ERROR: Missing HF_TOKEN!</h3>")
                 return
             api = HfApi(token=hf_token)
-            base_name = f"{cls_name}/probka_{int(time.time())}_{random.randint(1000, 9999)}_{idx}"
+            base_name = f"users_dataset/{cls_name}/{cls_name}_{int(time.time())}_{random.randint(1000, 9999)}_{idx}"
             api.upload_file(
                 path_or_fileobj=temp_file,
                 path_in_repo=f"{base_name}.wav",
                 repo_id="fkondela/KeywordTensor_prawda_falsz", 
-                repo_type="dataset"
+                repo_type="dataset",
+                commit_message="Add user dataset sample"
             )
             ui_queue.put(f"<h3>Successfully uploaded: {cls_name}</h3>")
         except Exception as e:
