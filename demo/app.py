@@ -103,7 +103,8 @@ def live_mode(state, ui_queue, live_flag):
                 source=(state.sr, state.buffer),
                 min_confidence=0.55,
                 n_averages=1,
-                listen_time=-1
+                listen_time=-1,
+                stop=lambda: not live_flag[0]
             )
         except Exception as e:
             ui_queue.put(f"<h2>ERROR: {str(e)}</h2>")
@@ -242,7 +243,8 @@ def admin_mode(password, state, ui_queue, live_flag):
                 samples=2,
                 actions={"prawda": create_action("prawda"), "falsz": create_action("falsz")},
                 source=(state.sr, state.buffer),
-                duration=3.0
+                duration=3.0,
+                stop=lambda: not live_flag[0]
             )
             ui_queue.put("DONE")
         except Exception as e:

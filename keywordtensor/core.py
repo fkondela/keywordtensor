@@ -278,7 +278,7 @@ class Engine:
 
 
 
-    def listen(self, model_path, actions=None, min_confidence=0.6, n_averages=3, source="microphone", listen_time=0, threads: int = None):
+    def listen(self, model_path, actions=None, min_confidence=0.6, n_averages=3, source="microphone", listen_time=0, threads: int = None, stop=None)):
 
         #wczytanie pliku config oraz modelu
         user_model_path = Path(f"{model_path}.onnx")
@@ -377,6 +377,7 @@ class Engine:
         try:
             if listen_time > 0:
                 while (time.time() - start_time) <= listen_time:
+                    if stop is not None and stop(): return
                     probs = predict(bufor_audio)
                     process_actions(probs)
                     time.sleep(0.05)
@@ -385,6 +386,7 @@ class Engine:
                 print(probs)
             elif listen_time == -1:
                 while True:
+                    if stop is not None and stop(): return
                     probs = predict(bufor_audio)
                     process_actions(probs)
                     time.sleep(0.05)
@@ -398,7 +400,7 @@ class Engine:
 
 
 
-    def record(self, target, classes: list, samples: int = 100, actions: dict = None, source="microphone", duration:float = 3.0, sr=16000):
+    def record(self, target, classes: list, samples: int = 100, actions: dict = None, source="microphone", duration:float = 3.0, sr=16000, stop=None):
         length_in_samples = int(sr * duration)
 
         device_id = None
@@ -413,6 +415,8 @@ class Engine:
 
         for cls in classes:
             for i in range(samples):
+
+                if stop is not None and stop(): return
                 
                 bufor_audio = None 
                 start_time = None  
