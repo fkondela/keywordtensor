@@ -97,7 +97,7 @@ class WaveformToSpectrogram(Transform):
         is_tensor = hasattr(waveform, 'numpy') 
         audio_np = waveform.squeeze().numpy() if is_tensor else waveform
         
-        mel = librosa.feature.melspectrogram(y=audio_np, sr=self.sr, n_fft=1024, hop_length=128, win_length=1024, n_mels=128, power=2.0, htk=True, center=True, pad_mode='reflect')
+        mel = librosa.feature.melspectrogram(y=audio_np, sr=self.sr, n_fft=1024, hop_length=128, win_length=1024, n_mels=128, power=2.0, htk=True, center=True, pad_mode='reflect', norm=None)
         spec_db = librosa.power_to_db(mel, ref=1.0, top_db=80.0, amin=1e-10)
         
         if is_tensor:

@@ -282,7 +282,7 @@ button[aria-label="Settings"] { display: none !important; }
 """
 
 head_html = '<link rel="icon" type="image/png" href="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png?v=2">'
-with gr.Blocks(title="KeywordTensor", head=head_html) as demo:
+with gr.Blocks(title="KeywordTensor") as demo:
     gr.HTML('''
     <div class="header-container">
         <img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png?v=2" alt="KeywordTensor Logo">
@@ -346,4 +346,4 @@ with gr.Blocks(title="KeywordTensor", head=head_html) as demo:
     """)
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=8000, theme=gr.themes.Soft(primary_hue="blue"), css=custom_css)
+    demo.launch(server_name="0.0.0.0", server_port=8000, theme=gr.themes.Soft(primary_hue="blue"), css=custom_css, head=head_html)
