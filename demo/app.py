@@ -102,7 +102,7 @@ def live_mode(state, ui_queue, live_flag):
                 }, 
                 source=(state.sr, state.buffer),
                 min_confidence=0.55,
-                n_averages=1,
+                n_averages=3,
                 listen_time=-1,
                 stop=lambda: not live_flag[0]
             )
@@ -345,5 +345,14 @@ with gr.Blocks(title="KeywordTensor") as demo:
     """)
 
 if __name__ == "__main__":
-    favicon = os.path.join(os.path.dirname(__file__), '..', 'assets', 'logo.png')
+    import urllib.request
+    import tempfile
+    
+    favicon = os.path.join(tempfile.gettempdir(), "keywordtensor_logo.png")
+    if not os.path.exists(favicon):
+        try:
+            urllib.request.urlretrieve("https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png", favicon)
+        except Exception:
+            favicon = None
+            
     demo.launch(server_name="0.0.0.0", server_port=8000, theme=gr.themes.Soft(primary_hue="blue"), css=custom_css, favicon_path=favicon)
