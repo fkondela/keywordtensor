@@ -197,7 +197,7 @@ def admin_mode(password, state, ui_queue, live_flag):
     def save_and_upload(cls_name, idx, tensor_data, sr):
         import wave
         import numpy as np
-        audio_np = tensor_data.squeeze().numpy()
+        audio_np = tensor_data.squeeze()
         audio_np = (audio_np * 32767).clip(-32768, 32767).astype(np.int16)
         
         temp_file = f"/tmp/temp_{int(time.time())}_{random.randint(10000, 99999)}_{idx}.wav"
@@ -281,8 +281,7 @@ footer { display: none !important; }
 button[aria-label="Settings"] { display: none !important; }
 """
 
-head_html = '<link rel="icon" type="image/png" href="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png">'
-with gr.Blocks(title="KeywordTensor", head=head_html) as demo:
+with gr.Blocks(title="KeywordTensor") as demo:
     gr.HTML('''
     <div class="header-container">
         <img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png" alt="KeywordTensor Logo">
@@ -346,4 +345,5 @@ with gr.Blocks(title="KeywordTensor", head=head_html) as demo:
     """)
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=8000, theme=gr.themes.Soft(primary_hue="blue"), css=custom_css)
+    favicon = os.path.join(os.path.dirname(__file__), '..', 'assets', 'logo.png')
+    demo.launch(server_name="0.0.0.0", server_port=8000, theme=gr.themes.Soft(primary_hue="blue"), css=custom_css, favicon_path=favicon)

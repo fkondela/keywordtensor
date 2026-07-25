@@ -68,6 +68,9 @@ jobs:
           sed -i '/"tqdm"/d' pyproject.toml
           sed -i '/"torch-audiomentations"/d' pyproject.toml
           sed -i '/"torchcodec"/d' pyproject.toml
+          sed -i '/"torch"/d' pyproject.toml
+          sed -i '/"torchaudio"/d' pyproject.toml
+          sed -i '/"onnx"/d' pyproject.toml
           
       - name: Build keywordtensor-edge
         env:

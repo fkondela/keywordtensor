@@ -1,9 +1,7 @@
 
 #wszystkie importy
 import json
-import torch
-import torchaudio
-import torchaudio.transforms as T
+
 import onnxruntime as ort
 from pathlib import Path
 import os
@@ -17,6 +15,8 @@ import threading
 import random
 import sys
 import contextlib
+import librosa
+import soundfile as sf
 
 try:
     import sounddevice as sd
@@ -26,6 +26,10 @@ except ImportError:
     sd = None
 
 try:
+    import torch
+    import torch.nn.functional
+    import torchaudio
+    import torchaudio.transforms as T
     from fastai.vision.all import *
     from fastcore.foundation import L
     import itertools
@@ -56,10 +60,21 @@ class LoadAudio(Transform):
         self.duration = duration
 
     def encodes(self, file: Path):
-        waveform, sr = torchaudio.load(file)
+
+        #torchaudio
+        #waveform, sr = torchaudio.load(file)
+        #if sr != self.sr:
+            #waveform = torchaudio.functional.resample(waveform, orig_freq=sr, new_freq=self.sr)
+            #sr = self.sr
+
+        #librosa
+        waveform, sr = librosa.load(file, sr=None)
         if sr != self.sr:
-            waveform = torchaudio.functional.resample(waveform, orig_freq=sr, new_freq=self.sr)
+            waveform = librosa.resample(waveform, orig_sr=sr, target_sr=self.sr)
             sr = self.sr
+        waveform = torch.tensor(waveform, dtype=torch.float32).unsqueeze(0)
+
+
         target_length = int(self.duration * sr)
         if waveform.shape[1] > target_length:
             waveform = waveform[:, :target_length]
@@ -76,13 +91,18 @@ class AudioSpectrogram(TensorImage):
 #definicja zamiany fali dźwiękowej na spektrogram
 class WaveformToSpectrogram(Transform):
     def __init__(self, sr=16000):
-        self.melspec = T.MelSpectrogram(sample_rate=sr, n_mels=128, n_fft=1024, hop_length=128)
-        self.todb    = T.AmplitudeToDB(top_db=80.0)
-        
+        self.sr = sr
+
     def encodes(self, waveform):
-        spec = self.todb(self.melspec(waveform))
-        return AudioSpectrogram(spec)
-    
+        is_tensor = hasattr(waveform, 'numpy') 
+        audio_np = waveform.squeeze().numpy() if is_tensor else waveform
+        
+        mel = librosa.feature.melspectrogram(y=audio_np, sr=self.sr, n_fft=1024, hop_length=128, win_length=1024, n_mels=128, power=2.0, htk=True, center=True, pad_mode='reflect')
+        spec_db = librosa.power_to_db(mel, ref=1.0, top_db=80.0, amin=1e-10)
+        
+        if is_tensor:
+            return AudioSpectrogram(torch.tensor(spec_db, dtype=torch.float32).unsqueeze(0))
+        return np.expand_dims(spec_db, axis=(0, 1)).astype(np.float32)
 #definicja augmentacji audio
 class AudioAugment(Transform):
     split_idx = 0 
@@ -123,19 +143,21 @@ class NormalizeSpec(Transform):
         self.std = std
 
     def setups(self, items):
-        if len(items) > 1000:
-            items = [items[i] for i in random.sample(range(len(items)), 1000)]
+        n_items = len(items)
+        indices = random.sample(range(n_items), 1000) if n_items > 1000 else range(n_items)
         sum_x, sum_x2, n = 0.0, 0.0, 0
-        for x in progress_bar(items):
+        for i in progress_bar(indices):
+            x = items[i]
             sum_x += x.sum().item()
             sum_x2 += (x**2).sum().item()
             n += x.numel()
         self.mean = sum_x / n
         self.std = (sum_x2 / n - self.mean**2)**0.5
 
-    def encodes(self, spec: AudioSpectrogram):
+    def encodes(self, spec):
         normalized = (spec - self.mean) / self.std
-        return AudioSpectrogram(normalized)
+        is_tensor = hasattr(spec, 'numpy')
+        return AudioSpectrogram(normalized) if is_tensor else normalized
 
     #def decodes(self, spec: AudioSpectrogram):
         #denormalized = (spec * self.std) + self.mean
@@ -328,14 +350,15 @@ class Engine:
         def predict(bufor_audio):
             if isinstance(bufor_audio, tuple):
                 original_sr, audio_data = bufor_audio
-                wav_tensor = torch.tensor(audio_data, dtype=torch.float32)
+                audio_np = np.array(audio_data, dtype=np.float32)
                 if original_sr != sr:
-                    wav_tensor = torchaudio.functional.resample(wav_tensor.unsqueeze(0), orig_freq=original_sr, new_freq=sr).squeeze(0)
+                    audio_np = librosa.resample(audio_np, orig_sr=original_sr, target_sr=sr)
             else:
-                wav_tensor = torch.tensor(list(bufor_audio), dtype=torch.float32)
-            spectrogram = wav_to_spec.encodes(wav_tensor)
-            spectrogram = normalize_spec.encodes(spectrogram)
-            onnx_data = spectrogram.unsqueeze(0).unsqueeze(0).numpy()
+                audio_np = np.array(list(bufor_audio), dtype=np.float32)
+
+            spec = wav_to_spec.encodes(audio_np)
+            onnx_data = normalize_spec.encodes(spec)
+
             logits = sess.run(None, {inp_name: onnx_data})[0][0]
             exp_res = np.exp(logits - np.max(logits))
             probs = exp_res / exp_res.sum()
@@ -443,19 +466,20 @@ class Engine:
 
                 if isinstance(bufor_audio, tuple):
                     original_sr, audio_data = bufor_audio
-                    tensor_data = torch.tensor(audio_data, dtype=torch.float32).T
+                    audio_np = np.array(audio_data, dtype=np.float32).T
                     if original_sr != sr:
-                        tensor_data = torchaudio.functional.resample(tensor_data, orig_freq=original_sr, new_freq=sr)
+                        audio_np = librosa.resample(audio_np, orig_sr=original_sr, target_sr=sr)
                 else:
-                    tensor_data = torch.tensor(bufor_audio, dtype=torch.float32).T
+                    audio_np = np.array(bufor_audio, dtype=np.float32).T
 
                 if isinstance(target, str):
                     folder_path = os.path.join(target, cls)
                     os.makedirs(folder_path, exist_ok=True)
                     save_path = os.path.join(target, cls, f"{i}_{uuid.uuid4().hex[:6]}.wav")
-                    torchaudio.save(save_path, tensor_data, sr)
+                    sf.write(save_path, audio_np, sr)
+
                 else:
-                    target(cls, i, tensor_data, sr)
+                    target(cls, i, audio_np, sr)
                 
 
 

@@ -17,6 +17,7 @@ KeywordTensor is built for developers who want to integrate voice commands into 
 - **Bring your own `.wav` files**: Just put your audio files into folders (e.g., `dataset/hello/`, `dataset/stop/`).
 - **Trigger custom Python actions**: Easily map recognized words directly to your own Python functions. No Speech-to-Text required—KeywordTensor detects predefined commands and directly triggers Python callbacks.
 - **Automated Export & Config**: Training automatically generates your optimized model and its configuration file. This allows you to launch live inference with a single command later. No manual saving required!
+- **Lightweight Edge Variant**: A standalone, PyTorch-free inference engine. Perfect for microcontrollers, Raspberry Pi, and IoT devices.
 - **Built-in Audio Augmentation**: We automatically mutate your `.wav` files during training (PitchShift, Gain & Polarity Inversion, Colored Noise) to improve robustness in noisy environments.
 - **SpecAugment Pipeline**: Raw audio is converted to Mel-spectrograms with Time and Frequency Masking applied. The model learns to recognize commands even if the microphone crackles or the audio drops out.
 - **Continuous Listening**: A rolling buffer averages predictions over time to prevent sudden false positive clicks.
@@ -44,7 +45,7 @@ The library is available in two variants on PyPI depending on your needs:
   Installs the full training environment. Use this on your PC or Server to train your models.
 
 - **`pip install keywordtensor-edge`**
-  A lightweight runtime variant. It strips out heavy training dependencies (like `fastai`), providing only what is needed for real-time inference (`listen()`). Perfect for Raspberry Pi or IoT devices.
+  A lightweight runtime variant. It completely strips out heavy training dependencies (like PyTorch and fastai), providing only what is needed for real-time inference and dataset collection (`listen()` and `record()`). Perfect for microcontrollers or IoT devices.
 
 ---
 
@@ -70,9 +71,14 @@ Available parameters in `.record()`:
 - `target` *(required)*: Path where the audio folders will be saved.
 - `classes` *(required)*: List of strings. Words you want to record.
 - `samples` *(default: 100)*: Number of audio samples to record per class.
-- `actions` *(default: None)*: Optional dictionary mapping words to custom visual/audio cues during recording.
-- `source` *(default: "microphone")*: Audio input source. You can use the default microphone or pass a custom generator.
+- `actions` *(default: None)*: Optional dictionary mapping words to custom callbacks. If provided, your callback will receive three kwargs: `start_recording` (a callable you must execute to begin recording), `current_time` (a callable returning elapsed seconds), and `total_time` (the target duration). If `None`, the engine simply prints the recording progress.
+- `source` *(default: "microphone")*: Audio input source. 
+  - `"microphone"` uses the default system microphone. 
+  - `"microphone:1"` uses a specific microphone ID. 
+  - `my_variable`: You can pass your own audio buffer directly (as a NumPy array/list) or a tuple `(sample_rate, audio_array)`. If you pass a tuple with a different sample rate, KeywordTensor will automatically resample it to `sr` under the hood!
 - `duration` *(default: 3.0)*: The exact duration of each audio clip in seconds.
+- `stop` *(default: None)*: Optional callback function that returns `True` to stop the recording loop.
+- `sr` *(default: 16000)*: Sample rate for the recorded audio files.
 
 ---
 
@@ -125,12 +131,12 @@ def on_hello():
 def on_stop():
     print("Action triggered: Stopping the robot!")
 
-# Map keywords to your Python functions with per-keyword cooldowns
+# Map keywords to your Python functions
 model.listen(
     model_path="my_custom_model",
     actions={
-        "hello": {"function": on_hello, "cooldown": 2.0},
-        "stop": {"function": on_stop, "cooldown": 3.0}
+        "hello": on_hello,
+        "stop": on_stop
     },
     min_confidence=0.6,
     n_averages=3,
@@ -141,14 +147,15 @@ model.listen(
 **Listen parameters:**
 The `.listen()` method itself accepts the following runtime arguments:
 - `model_path` *(required)*: The name of the model to load. You can provide the path to your own trained model, or use the built-in `"prawda_falsz"` model which is highly robust to noise and pitched voices.
-- `actions` *(default: None)*: Optional dictionary mapping detected keywords to Python callbacks. You can pass just a function (defaults to 0.0s cooldown), or a dictionary for precise control: `{"function": your_function, "cooldown": 2.0}`. Cooldowns are tracked individually per keyword!
+- `actions` *(default: None)*: Optional dictionary mapping detected keywords to your own Python callbacks. If `None`, the engine prints the detected word and waits for the sample duration. If you provide callbacks, they execute immediately upon detection, and you must implement any required "cooldown" inside your function (the listen core will pause while your function runs).
 - `min_confidence` *(default: 0.6)*: The probability threshold (0.0 to 1.0) required to trigger the action.
 - `n_averages` *(default: 3)*: Temporal smoothing. Averages the last *N* predictions to prevent false positive clicks.
 - `source` *(default: "microphone")*: Audio input source. 
   - `"microphone"` uses the default system microphone. 
   - `"microphone:1"` uses a specific microphone ID. 
-  - `my_variable` You can also pass your own Python variable (a generator) that yields current microphone audio data (arrays of Float32 at 16000Hz) to easily plug KeywordTensor into your own custom apps (like FastAPI or Gradio)!
-- `listen_time` *(default: 0)*: How long to listen in seconds. `0` means listen forever.
+  - `my_variable`: You can pass your own audio buffer directly (as a NumPy array/list) or a tuple `(sample_rate, audio_array)` for automatic resampling.
+- `listen_time` *(default: -1)*: How long to listen in seconds. `-1` means listen forever, `0` performs a single prediction, and `>0` sets a specific duration.
+- `stop` *(default: None)*: Optional callback function that returns `True` to stop the listening loop.
 - `threads` *(default: None)*: Number of CPU threads to use for ONNX inference.
 
 **Config file parameters:**

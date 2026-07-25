@@ -18,7 +18,9 @@ dependencies = [
     "torch-audiomentations",
     "torchcodec",
     "onnx",
-    "huggingface_hub"
+    "huggingface_hub",
+    "librosa",
+    "soundfile"
 ]
 
 [tool.setuptools]
