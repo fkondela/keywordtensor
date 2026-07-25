@@ -9,7 +9,7 @@ from pathlib import Path
 import os
 import time
 import uuid
-from collections import deque
+from collections import deque, defaultdict
 import numpy as np
 import inspect
 import queue
@@ -148,41 +148,34 @@ class NormalizeSpec(Transform):
 
 #przygotowanie plikow do treningu i tworzenie klasy other gdy nazwa zawiera "mixed:"
 def prepare_files(files_paths, classes, label_func):
-    if isinstance(files_paths, (str, Path)): files_paths = [files_paths]
+    paths = [files_paths] if isinstance(files_paths, (str, Path)) else files_paths
+    by_cls = defaultdict(list)
     
-    all_items = []
-    for p in files_paths:
-        all_items.extend([(f, label_func(f)) for f in get_files(Path(p), extensions=['.wav', '.opus'])])
-    all_items = L(all_items)
-    if classes is None: return all_items, list(set([item[1] for item in all_items]))
-    classes_fixed = [c.replace("mixed:", "") for c in classes]
-    for c in classes_fixed: assert any(item[1] == c for item in all_items), f"Error: Found 0 files for class '{c}'"
+    for f in (file for p in paths for file in get_files(Path(p), extensions=['.wav', '.opus'])):
+        by_cls[label_func(f)].append(f)
+        
+    if not classes: 
+        return L((f, l) for l, fs in by_cls.items() for f in fs), list(by_cls.keys())
     
-    all_other_items = L([item for item in all_items if item[1] not in classes_fixed])
-    all_classes_items = L([item for item in all_items if item[1] in classes_fixed])
-
-    for orig_class, fixed_class in zip(classes, classes_fixed):
-        if orig_class != fixed_class:
-            noise_items = L([item for item in all_classes_items if item[1] == fixed_class])
+    bases = [c.replace("mixed:", "") for c in classes]
+    for b in bases: 
+        assert by_cls[b], f"Error: 0 files for class '{b}'"
+    
+    normal_classes = [c for c in classes if "mixed:" not in c]
+    tgt_n = len(by_cls[normal_classes[0]]) if normal_classes else 0
+    
+    others = [f for k, v in by_cls.items() if k not in bases for f in v]
+    out = L()
+    
+    for c, b in zip(classes, bases):
+        noise = by_cls[b]
+        if c == b: 
+            out.extend([(f, c) for f in noise])
+        else:
+            pool = (random.choices(noise, k=tgt_n//2) + random.choices(others, k=tgt_n - tgt_n//2)) if (noise and others) else random.choices(noise or others, k=tgt_n)
+            out.extend([(f, c) for f in pool])
             
-            normal_classes = [f for o, f in zip(classes, classes_fixed) if o == f]
-            target_n = len([item for item in all_classes_items if item[1] == normal_classes[0]])
-            
-            all_classes_items = L([item for item in all_classes_items if item[1] != fixed_class])
-            
-            if not noise_items:
-                mixed_items = random.choices(all_other_items, k=target_n)
-            elif not all_other_items:
-                mixed_items = random.choices(noise_items, k=target_n)
-            else:
-                num_half = target_n // 2
-                kept_noise = random.choices(noise_items, k=num_half)
-                new_noise = random.choices(all_other_items, k=target_n - num_half)
-                mixed_items = kept_noise + new_noise
-                
-            mixed_items = L([(item[0], orig_class) for item in mixed_items])
-            all_classes_items += mixed_items
-    return all_classes_items, classes
+    return out, classes
 
 #pobieranie danych z: google, mswc, linku, hf, lub folderu
 def resolve_dataset(dataset):
@@ -417,7 +410,7 @@ class Engine:
             for i in range(samples):
 
                 if stop is not None and stop(): return
-                
+
                 bufor_audio = None 
                 start_time = None  
                 def record_in_background():
