@@ -271,7 +271,7 @@ class Engine:
 
 
 
-    def listen(self, model_path, actions=None, min_confidence=0.6, n_averages=3, source="microphone", listen_time=0, threads: int = None, stop=None)):
+    def listen(self, model_path, actions=None, min_confidence=0.6, n_averages=3, source="microphone", listen_time=0, threads: int = None, stop=None):
 
         #wczytanie pliku config oraz modelu
         user_model_path = Path(f"{model_path}.onnx")
