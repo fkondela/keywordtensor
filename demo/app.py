@@ -102,7 +102,7 @@ def live_mode(state, ui_queue, live_flag):
                 }, 
                 source=(state.sr, state.buffer),
                 min_confidence=0.55,
-                n_averages=3,
+                n_averages=1,
                 listen_time=-1,
                 stop=lambda: not live_flag[0]
             )
