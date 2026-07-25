@@ -48,20 +48,20 @@ def consume_ui_events(ui_queue, thread, live_flag):
 def handle_audio_stream(chunk, state):
     if chunk:
         sr, y = chunk
-        if state.sr is None:
-            state.sr = sr
-            state.buffer = [0.0] * int(sr * 3.0)
-            
-        if y.dtype != np.float32:
-            y = y.astype(np.float32) / 32768.0
-        if len(y.shape) > 1:
-            y = np.mean(y, axis=1)
-            
-        y_list = y.tolist()
-        shift = len(y_list)
-        target = int(state.sr * 3.0)
-        
         with state.lock:
+            if state.sr is None:
+                state.sr = sr
+                state.buffer = [0.0] * int(sr * 3.0)
+                
+            if y.dtype != np.float32:
+                y = y.astype(np.float32) / 32768.0
+            if len(y.shape) > 1:
+                y = np.mean(y, axis=1)
+                
+            y_list = y.tolist()
+            shift = len(y_list)
+            target = int(sr * 3.0)
+            
             if shift >= target:
                 state.buffer[:] = y_list[-target:]
             else:
@@ -281,10 +281,11 @@ footer { display: none !important; }
 button[aria-label="Settings"] { display: none !important; }
 """
 
-with gr.Blocks(title="KeywordTensor") as demo:
+head_html = '<link rel="icon" type="image/png" href="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png?v=2">'
+with gr.Blocks(title="KeywordTensor", head=head_html) as demo:
     gr.HTML('''
     <div class="header-container">
-        <img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png" alt="KeywordTensor Logo">
+        <img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png?v=2" alt="KeywordTensor Logo">
         <h1>KeywordTensor - prawda_falsz model</h1>
     </div>
     ''')
@@ -345,14 +346,4 @@ with gr.Blocks(title="KeywordTensor") as demo:
     """)
 
 if __name__ == "__main__":
-    import urllib.request
-    import tempfile
-    
-    favicon = os.path.join(tempfile.gettempdir(), "keywordtensor_logo.png")
-    if not os.path.exists(favicon):
-        try:
-            urllib.request.urlretrieve("https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png", favicon)
-        except Exception:
-            favicon = None
-            
-    demo.launch(server_name="0.0.0.0", server_port=8000, theme=gr.themes.Soft(primary_hue="blue"), css=custom_css, favicon_path=favicon)
+    demo.launch(server_name="0.0.0.0", server_port=8000, theme=gr.themes.Soft(primary_hue="blue"), css=custom_css)
