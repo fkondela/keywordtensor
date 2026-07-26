@@ -12,7 +12,18 @@ from keywordtensor.core import Engine
 engine = Engine()
 fake = Faker('pl_PL')
 
-HARD_NEGATIVES = ["prawie", "prawo", "prawnik", "sprawdzam", "sprawa", "fauna", "fala", "szum", "wdowa", "owca"]
+CUSTOM_WORDS = [
+    "prawa", "prawie", "trawa", "sprawa", "praca", "prasa", "pręga", "prąd", "pająk", "poniedziałek",
+    "broda", "wada", "rada", "runda", "frajda", "kreda", "nagroda", "gwiazda", "pogoda", "narada",
+    "osada", "posada", "zgoda", "uroda", "kłoda", "bryła", "brama", "tama", "sowa", "kawa",
+    "lada", "mowa", "wrzawa", "droga", "sroga", "woda", "rzeka", "kometa", "moneta", "kanapa",
+    "rakieta", "gazeta", "lornetka", "latarka", "planeta", "apteka",
+    "marsz", "kosz", "tusz", "plusz", "mysz", "kurz", "kwas", "szum", "wóz", "flet", "gmach",
+    "deszcz", "wiersz", "grosz", "klucz", "mecz", "płacz", "rzecz", "miecz", "piec",
+    "gąszcz", "barszcz", "busz", "kleszcz", "kłos", "głaz", "czas", "las", "wąż",
+    "wąs", "płaszcz", "blask", "fauna", "flora", "farba", "foka", "fala", "flaga", "fosa",
+    "folia", "fotel", "futro", "fasola", "farma"
+]
 _other_cycle = itertools.cycle(["bg", "fn", "bg", "hn"])
 _current_word = ""
 
@@ -143,7 +154,7 @@ def admin_mode(password, state, ui_queue, live_flag):
             _current_word = fake.word().lower()
             return _current_word
         else:
-            _current_word = random.choice(HARD_NEGATIVES)
+            _current_word = random.choice(CUSTOM_WORDS)
             return _current_word
 
     def create_action(cls_name):
