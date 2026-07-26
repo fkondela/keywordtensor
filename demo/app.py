@@ -4,6 +4,7 @@ import random
 import queue
 import threading
 import itertools
+import collections
 import numpy as np
 import gradio as gr
 from faker import Faker
@@ -67,7 +68,8 @@ def handle_audio_stream(chunk, state):
         with state.lock:
             if state.sr is None:
                 state.sr = sr
-                state.buffer = [0.0] * int(sr * 3.0)
+                target = int(sr * 3.0)
+                state.buffer = collections.deque([0.0] * target, maxlen=target)
                 
             if y.dtype != np.float32:
                 y = y.astype(np.float32) / 32768.0
@@ -76,12 +78,9 @@ def handle_audio_stream(chunk, state):
                 
             y_list = y.tolist()
             shift = len(y_list)
-            target = int(sr * 3.0)
             
             if shift > 0:
                 state.buffer.extend(y_list)
-                if len(state.buffer) > target:
-                    state.buffer = state.buffer[-target:]
 
 def live_mode(state, ui_queue, live_flag):
     live_flag[0] = True
@@ -269,10 +268,10 @@ footer { display: none !important; }
 button[aria-label="Settings"] { display: none !important; }
 """
 
-with gr.Blocks(title="KeywordTensor") as demo:
+with gr.Blocks(title="KeywordTensor", head=head_html) as demo:
     gr.HTML('''
     <div class="header-container">
-        <img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png?v=2" alt="KeywordTensor Logo">
+        <img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png?v=999" alt="KeywordTensor Logo">
         <h1>KeywordTensor - prawda_falsz model</h1>
     </div>
     ''')
