@@ -115,7 +115,7 @@ def live_mode(state, ui_queue, live_flag):
                     "other": other_cb
                 }, 
                 source=(state.sr, state.buffer),
-                min_confidence=0.55,
+                min_confidence=0.7,
                 n_averages=1,
                 listen_time=-1,
                 stop=lambda: not live_flag[0]
@@ -269,7 +269,7 @@ button[aria-label="Settings"] { display: none !important; }
 """
 
 head_html = '<link rel="icon" type="image/png" href="/favicon.ico?v=999">'
-with gr.Blocks(title="KeywordTensor", head=head_html) as demo:
+with gr.Blocks(title="KeywordTensor") as demo:
     gr.HTML('''
     <div class="header-container">
         <img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png?v=999" alt="KeywordTensor Logo">
@@ -338,4 +338,4 @@ if __name__ == "__main__":
     base = os.path.dirname(__file__)
     favicon_path = os.path.join(base if os.path.exists(os.path.join(base, "assets")) else os.path.dirname(base), "assets", "logo.png")
     
-    demo.launch(server_name="0.0.0.0", server_port=8000, theme=gr.themes.Soft(primary_hue="blue"), css=custom_css, favicon_path=favicon_path)
+    demo.launch(server_name="0.0.0.0", server_port=8000, theme=gr.themes.Soft(primary_hue="blue"), css=custom_css, favicon_path=favicon_path, head=head_html)
