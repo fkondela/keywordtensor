@@ -420,8 +420,8 @@ class Engine:
         if actions is None:
             actions = {}
 
-        for cls in classes:
-            for i in range(samples):
+        for i in range(samples):
+            for cls in classes:
 
                 if stop is not None and stop(): return
 
