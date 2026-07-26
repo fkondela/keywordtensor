@@ -53,31 +53,15 @@ The library is available in two variants on PyPI depending on your needs:
 If you don't want to use public datasets, you can easily record your own voice to build a custom dataset using the built-in `.record()` tool.
 
 ```python
-import time
 import keywordtensor as kt
 
 model = kt.Engine()
-
-# Define a custom recording action to print progress
-def on_record(start_recording, current_time, total_time):
-    print("Get ready... speak now!")
-    start_recording() # You MUST call this to actually start listening
-    
-    # Simple loop to print the current time
-    while current_time() < total_time:
-        print(f"Recording: {current_time():.1f}s / {total_time}s", end="\r")
-        time.sleep(0.1)
-    print("\nSaved!")
 
 # Record 50 samples of the word "hello" and "stop"
 model.record(
     target="my_dataset", 
     classes=["hello", "stop"], 
-    samples=50,
-    actions={
-        "hello": on_record,
-        "stop": on_record
-    }
+    samples=50
 )
 ```
 
