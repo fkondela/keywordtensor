@@ -1,7 +1,6 @@
 
 #wszystkie importy
 import json
-
 import onnxruntime as ort
 from pathlib import Path
 import os
@@ -60,20 +59,11 @@ class LoadAudio(Transform):
         self.duration = duration
 
     def encodes(self, file: Path):
-
-        #torchaudio
-        #waveform, sr = torchaudio.load(file)
-        #if sr != self.sr:
-            #waveform = torchaudio.functional.resample(waveform, orig_freq=sr, new_freq=self.sr)
-            #sr = self.sr
-
-        #librosa
         waveform, sr = librosa.load(file, sr=None)
         if sr != self.sr:
             waveform = librosa.resample(waveform, orig_sr=sr, target_sr=self.sr)
             sr = self.sr
         waveform = torch.tensor(waveform, dtype=torch.float32).unsqueeze(0)
-
 
         target_length = int(self.duration * sr)
         if waveform.shape[1] > target_length:
@@ -103,6 +93,7 @@ class WaveformToSpectrogram(Transform):
         if is_tensor:
             return AudioSpectrogram(torch.tensor(spec_db, dtype=torch.float32).unsqueeze(0))
         return np.expand_dims(spec_db, axis=(0, 1)).astype(np.float32)
+        
 #definicja augmentacji audio
 class AudioAugment(Transform):
     split_idx = 0 
@@ -231,13 +222,13 @@ def resolve_dataset(dataset):
 
 
 
-    
-#klasa gdy ktos chce trenowac swoj wlasny model, a nie korzystac z wbudowanych wytrenowanych przykladow 
+
+
 class Engine:
     def __init__(self):
         self.model_name = None
 
-    def train(self, dataset, classes: list = None, epochs=30, batch_size=32, wd=0.01, eps=0.01, valid_pct=0.1, model_path='myownmodel', duration=3.0, sr=16000):
+    def train(self, dataset, classes: list = None, epochs=10, batch_size=32, wd=0.01, eps=0.01, valid_pct=0.1, model_path='myownmodel', duration=1.0, sr=16000):
         if IS_EDGE_VERSION:
             raise RuntimeError("This is the Edge version. To train, install: pip install keywordtensor[train]")
 
@@ -416,7 +407,7 @@ class Engine:
 
 
 
-    def record(self, target, classes: list, samples: int = 100, actions: dict = None, source="microphone", duration:float = 3.0, sr=16000, stop=None):
+    def record(self, target, classes: list, samples: int = 100, actions: dict = None, source="microphone", duration:float = 1.0, sr=16000, stop=None):
         length_in_samples = int(sr * duration)
 
         device_id = None
