@@ -3,6 +3,7 @@ import time
 import random
 import queue
 import threading
+import itertools
 import numpy as np
 import gradio as gr
 from faker import Faker
@@ -10,6 +11,10 @@ from keywordtensor.core import Engine
 
 engine = Engine()
 fake = Faker('pl_PL')
+
+HARD_NEGATIVES = ["prawie", "prawo", "prawnik", "sprawdzam", "sprawa", "fauna", "fala", "szum", "wdowa", "owca"]
+_other_cycle = itertools.cycle(["bg", "fn", "bg", "hn"])
+_current_word = ""
 
 class AudioState:
     def __init__(self):
@@ -116,145 +121,117 @@ def live_mode(state, ui_queue, live_flag):
     yield from consume_ui_events(ui_queue, t, live_flag)
 
 def admin_mode(password, state, ui_queue, live_flag):
+    global _current_word
     if password != os.environ.get("ADMIN_PASS", "dev123"):
         yield "<h3>Invalid Password!</h3>", gr.update(visible=True)
         return
-        
+
     live_flag[0] = True
     with state.lock:
         state.buffer.clear()
         state.sr = None
     with ui_queue.mutex:
         ui_queue.queue.clear()
-        
-    BANNED_WORDS = ["prawda", "fałsz", "falsz", "prawdę", "prawde"]
-    CUSTOM_WORDS = ["prawie", "prawo", "prawnik", "sprawdzam", "sprawa", "fauna", "fala", "szum", "wdowa", "owca"]
-    
-    def safe_word():
-        if random.random() < 0.35:
-            return random.choice(CUSTOM_WORDS)
-        while True:
-            word = fake.word().lower()
-            if word not in BANNED_WORDS:
-                return word
-                
-    def get_times(count):
-        if count == 0: return []
-        while True:
-            times = [random.uniform(0.1, 1.8) for _ in range(count)]
-            times.sort()
-            if count == 1: return times
-            if all(times[i] - times[i-1] >= 0.65 for i in range(1, count)):
-                return times
 
-    def build_timeline(cls_name):
-        items = []
-        count = random.choice([2, 3]) if cls_name != "other" else random.choice([1, 2, 3])
-        times = get_times(count)
-        for t in times:
-            items.append({"start": t, "text": safe_word(), "read": False, "target": False})
-            
-        if cls_name in ["prawda", "falsz"] and count > 0:
-            idx = random.randint(0, count - 1)
-            items[idx]["text"] = "PRAWDA" if cls_name == "prawda" else "FAŁSZ"
-            items[idx]["target"] = True
-        return items
+    def get_other_prompt():
+        global _current_word
+        kind = next(_other_cycle)
+        if kind == "bg":
+            _current_word = "background"
+            return None
+        elif kind == "fn":
+            _current_word = fake.word().lower()
+            return _current_word
+        else:
+            _current_word = random.choice(HARD_NEGATIVES)
+            return _current_word
 
     def create_action(cls_name):
         def action(start_recording, current_time, total_time):
-            timeline = build_timeline(cls_name)
-            plan_str = " | ".join([f"**[{z['start']:.1f}s]** {z['text']}" for z in timeline])
-            ui_queue.put(f"<h3>Plan (5s):</h3><p>{plan_str}</p>")
-            
-            for _ in range(50):
+            word = get_other_prompt() if cls_name == "other" else cls_name
+            display = f"<h2>🗣️ SPEAK: {word.upper()}</h2>" if word else "<h2>🔇 SAY NOTHING</h2>"
+            preview = f"<h3>Next: {'🗣️ ' + word.upper() if word else '🔇 SAY NOTHING'}</h3>"
+
+            ui_queue.put(preview)
+            for _ in range(20):
                 if not live_flag[0]: return
                 time.sleep(0.1)
-            
+
             for i in [3, 2, 1]:
                 if not live_flag[0]: return
-                ui_queue.put(f"<h3>Start in {i}...</h3>")
+                ui_queue.put(f"<h3>{i}...</h3>")
                 time.sleep(1.0)
-                
+
             start_recording()
-            
-            while (t := current_time()) < total_time:
+
+            if word:
+                delay = random.uniform(0.0, 0.5)
+                while current_time() < delay:
+                    if not live_flag[0]: return
+                    time.sleep(0.02)
+
+            ui_queue.put(display)
+
+            while current_time() < total_time:
                 if not live_flag[0]: return
-                html_out = ""
-                for z in timeline:
-                    if not z["read"] and t >= z["start"]:
-                        if z["target"]:
-                            html_out = f"<h2>SPEAK: <span style='color:red'>{z['text']}</span></h2>"
-                        else:
-                            html_out = f"<h2>SPEAK: {z['text']}</h2>"
-                        z["read"] = True
-                if html_out:
-                    ui_queue.put(html_out)
                 time.sleep(0.05)
-                
-            ui_queue.put("<h3>Recording finished! Uploading...</h3>")
+
+            ui_queue.put("<h3>Uploading...</h3>")
         return action
 
-    def save_and_upload(cls_name, idx, tensor_data, sr):
-        import wave
-        import numpy as np
-        audio_np = tensor_data.squeeze()
-        audio_np = (audio_np * 32767).clip(-32768, 32767).astype(np.int16)
-        
-        temp_file = f"/tmp/temp_{int(time.time())}_{random.randint(10000, 99999)}_{idx}.wav"
-        
-        with wave.open(temp_file, "w") as f:
-            f.setnchannels(1)
-            f.setsampwidth(2)
-            f.setframerate(sr)
-            f.writeframes(audio_np.tobytes())
+    def save_and_upload(cls_name, idx, audio_np, sr):
+        import soundfile as sf
+        label = _current_word if cls_name == "other" else cls_name
+        filename = f"{label}_{int(time.time())}_{random.randint(1000, 9999)}_{idx}.wav"
+        tmp = f"/tmp/{filename}"
+        sf.write(tmp, audio_np.squeeze(), sr)
         try:
-            from huggingface_hub import HfApi
             hf_token = os.environ.get("HF_TOKEN")
             if not hf_token:
                 ui_queue.put("<h3>ERROR: Missing HF_TOKEN!</h3>")
                 return
-            api = HfApi(token=hf_token)
-            base_name = f"users_dataset/{cls_name}/{cls_name}_{int(time.time())}_{random.randint(1000, 9999)}_{idx}"
-            api.upload_file(
-                path_or_fileobj=temp_file,
-                path_in_repo=f"{base_name}.wav",
-                repo_id="fkondela/KeywordTensor_prawda_falsz", 
+            from huggingface_hub import HfApi
+            HfApi(token=hf_token).upload_file(
+                path_or_fileobj=tmp,
+                path_in_repo=f"users_dataset/{cls_name}/{filename}",
+                repo_id="fkondela/KeywordTensor_prawda_falsz",
                 repo_type="dataset",
-                commit_message="Add user dataset sample"
+                commit_message=f"Add {cls_name} sample"
             )
-            ui_queue.put(f"<h3>Successfully uploaded: {cls_name}</h3>")
+            ui_queue.put(f"<h3>Uploaded: {cls_name}/{filename}</h3>")
         except Exception as e:
-            ui_queue.put(f"<h3>ERROR: {str(e)}</h3>")
+            ui_queue.put(f"<h3>ERROR: {e}</h3>")
         finally:
-            if os.path.exists(temp_file):
-                try:
-                    os.remove(temp_file)
-                except Exception:
-                    pass
+            if os.path.exists(tmp):
+                try: os.remove(tmp)
+                except: pass
 
     def worker():
         while state.sr is None and live_flag[0]:
             time.sleep(0.05)
         if not live_flag[0]: return
-        
         try:
             engine.record(
                 target=save_and_upload,
-                classes=["prawda", "falsz"],
+                classes=["prawda", "falsz", "other"],
                 samples=2,
-                actions={"prawda": create_action("prawda"), "falsz": create_action("falsz")},
+                actions={
+                    "prawda": create_action("prawda"),
+                    "falsz":  create_action("falsz"),
+                    "other":  create_action("other"),
+                },
                 source=(state.sr, state.buffer),
-                duration=3.0,
+                duration=2.0,
                 stop=lambda: not live_flag[0]
             )
             ui_queue.put("DONE")
         except Exception as e:
-            ui_queue.put(f"<h3>ERROR: {str(e)}</h3>")
+            ui_queue.put(f"<h3>ERROR: {e}</h3>")
             ui_queue.put("DONE")
 
     t = threading.Thread(target=worker)
     t.start()
-    
+
     yield "<h3>Starting...</h3>", gr.update(visible=False)
     yield from consume_ui_events(ui_queue, t, live_flag)
 
