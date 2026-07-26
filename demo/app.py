@@ -78,11 +78,10 @@ def handle_audio_stream(chunk, state):
             shift = len(y_list)
             target = int(sr * 3.0)
             
-            if shift >= target:
-                state.buffer[:] = y_list[-target:]
-            else:
-                state.buffer[:-shift] = state.buffer[shift:]
-                state.buffer[-shift:] = y_list
+            if shift > 0:
+                state.buffer.extend(y_list)
+                if len(state.buffer) > target:
+                    state.buffer = state.buffer[-target:]
 
 def live_mode(state, ui_queue, live_flag):
     live_flag[0] = True
