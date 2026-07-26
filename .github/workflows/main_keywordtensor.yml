@@ -31,6 +31,7 @@ jobs:
           mkdir deploy_workspace
           cp -r demo/* deploy_workspace/
           cp -r keywordtensor deploy_workspace/
+          cp -r assets deploy_workspace/
           pip install --upgrade pip
           pip install -r deploy_workspace/requirements.txt --target="deploy_workspace/.python_packages/lib/site-packages"
           cd deploy_workspace
