@@ -457,11 +457,11 @@ class Engine:
 
                 if isinstance(bufor_audio, tuple):
                     original_sr, audio_data = bufor_audio
-                    audio_np = np.array(audio_data, dtype=np.float32).T
+                    audio_np = np.array(audio_data, dtype=np.float32).squeeze()
                     if original_sr != sr:
                         audio_np = librosa.resample(audio_np, orig_sr=original_sr, target_sr=sr)
                 else:
-                    audio_np = np.array(bufor_audio, dtype=np.float32).T
+                    audio_np = np.array(bufor_audio, dtype=np.float32).squeeze()
 
                 if isinstance(target, str):
                     folder_path = os.path.join(target, cls)
