@@ -99,8 +99,8 @@ model.train(
 
 **Training parameters:**
 You have total control over the pipeline. Available parameters in `.train()`:
-- `dataset` *(required)*: Path to your audio dataset. You can provide a local folder path, a direct download link, a built-in dataset (`"google"`, `"mswc"`), or any Hugging Face dataset (`"hf:username/repo"`).
-- `classes` *(default: all subfolders)*: List of specific words (folders) you want to recognize. If not provided, it trains on all available folders. **Pro-tip:** Add `"mixed:other"` to the list, and the engine will automatically aggregate random words from your dataset to create a robust background noise class!
+- `dataset` *(required)*: Path to your audio dataset. You can provide a local folder path, a direct download link, a built-in dataset (`"google"`, `"mswc"`), or any Hugging Face dataset (`"hf:username/repo"`). *(Note: The `"google"` and `"mswc"` datasets don't contain native background noise, but KeywordTensor automatically downloads a supplementary background dataset for them if you request the `"mixed:other"` class!)*
+- `classes` *(default: all subfolders)*: List of specific words (folders) you want to recognize. If not provided, it trains on all available folders. **Pro-tip:** Add `"mixed:other"` to the list to let the engine automatically generate a robust "noise/unknown" class! It does this by smartly mixing 50% pure background noise with 50% random words from the other unselected classes in your dataset.
 - `model_path` *(default: 'myownmodel')*: Name of the final exported model.
 - `duration` *(default: 1.0)*: The exact duration of your audio clips in seconds. If an audio clip is shorter, it will be automatically padded with zeros (silence). If it is longer, it will be accurately truncated to match this length.
 - `sr` *(default: 16000)*: The target sample rate of the trained model. If your audio files have a different sample rate, the engine will automatically resample them under the hood.
