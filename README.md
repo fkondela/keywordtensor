@@ -15,7 +15,7 @@ KeywordTensor is built for developers who want to integrate voice commands into 
 
 - **Download public datasets** so you can choose your own words, and let KeywordTensor automatically distil them into a tiny personalized model for your device.
 - **Bring your own audio files**: Just put your audio files into folders (e.g., `dataset/hello/`, `dataset/stop/`).
-- **Trigger custom Python actions**: Easily map recognized words directly to your own Python functions. No Speech-to-Text required—KeywordTensor detects predefined commands and directly triggers Python callbacks.
+- **Trigger custom Python actions**: Easily map recognized words directly to your own Python functions. KeywordTensor detects predefined commands and triggers your custom callbacks.
 - **Automated Export & Config**: Training automatically generates your optimized model and its configuration file. This allows you to launch live inference with a single command later. No manual saving required!
 - **Lightweight Edge Variant**: A lightweight variant without heavy training dependencies. It allows running models on microcontrollers and IoT devices.
 - **Built-in Audio Augmentation**: We automatically mutate your audio files during training to improve robustness in noisy environments.
