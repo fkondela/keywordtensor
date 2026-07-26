@@ -268,6 +268,7 @@ footer { display: none !important; }
 button[aria-label="Settings"] { display: none !important; }
 """
 
+head_html = '<link rel="icon" type="image/png" href="/favicon.ico?v=999">'
 with gr.Blocks(title="KeywordTensor", head=head_html) as demo:
     gr.HTML('''
     <div class="header-container">
