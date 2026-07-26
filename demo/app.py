@@ -161,7 +161,7 @@ def admin_mode(password, state, ui_queue, live_flag):
         def action(start_recording, current_time, total_time):
             word = get_other_prompt() if cls_name == "other" else cls_name
             display = f"<h2>🗣️ SPEAK: {word.upper()}</h2>" if word else "<h2>🔇 SAY NOTHING</h2>"
-            preview = f"<h3>Next: {'🗣️ ' + word.upper() if word else '🔇 SAY NOTHING'}</h3>"
+            preview = f"<h3>Prepare to say: {word.upper() if word else 'NOTHING (SILENCE)'}</h3>"
 
             ui_queue.put(preview)
             for _ in range(20):
