@@ -32,6 +32,7 @@ class AudioState:
     def __init__(self):
         self.sr = None
         self.buffer = []
+        self.duration = 3.0
         self.lock = threading.Lock()
 
 def consume_ui_events(ui_queue, thread, live_flag):
@@ -68,7 +69,7 @@ def handle_audio_stream(chunk, state):
         with state.lock:
             if state.sr is None:
                 state.sr = sr
-                target = int(sr * 3.0)
+                target = int(sr * state.duration)
                 state.buffer = collections.deque([0.0] * target, maxlen=target)
                 
             if y.dtype != np.float32:
@@ -85,6 +86,7 @@ def handle_audio_stream(chunk, state):
 def live_mode(state, ui_queue, live_flag):
     live_flag[0] = True
     with state.lock:
+        state.duration = 3.0
         state.buffer.clear()
         state.sr = None
     with ui_queue.mutex:
@@ -137,6 +139,7 @@ def admin_mode(password, state, ui_queue, live_flag):
 
     live_flag[0] = True
     with state.lock:
+        state.duration = 2.0
         state.buffer.clear()
         state.sr = None
     with ui_queue.mutex:
@@ -158,8 +161,9 @@ def admin_mode(password, state, ui_queue, live_flag):
     def create_action(cls_name):
         def action(start_recording, current_time, total_time):
             word = get_other_prompt() if cls_name == "other" else cls_name
-            display = f"<h2>🗣️ SPEAK: {word.upper()}</h2>" if word else "<h2>🔇 SAY NOTHING</h2>"
-            preview = f"<h3>Prepare to say: {word.upper() if word else 'NOTHING (SILENCE)'}</h3>"
+            word_display = "FAŁSZ" if word == "falsz" else (word.upper() if word else "")
+            display = f"<h2>🗣️ SPEAK: {word_display}</h2>" if word else "<h2>🔇 SAY NOTHING</h2>"
+            preview = f"<h3>Prepare to say: {word_display if word else 'NOTHING (SILENCE)'}</h3>"
 
             ui_queue.put(preview)
             for _ in range(20):
