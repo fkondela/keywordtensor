@@ -190,6 +190,7 @@ def admin_mode(password, state, ui_queue, live_flag):
         return action
 
     def save_and_upload(cls_name, idx, audio_np, sr):
+        if not live_flag[0]: return
         import soundfile as sf
         label = _current_word if cls_name == "other" else cls_name
         filename = f"{label}_{int(time.time())}_{random.randint(1000, 9999)}_{idx}.wav"
@@ -317,10 +318,18 @@ with gr.Blocks(title="KeywordTensor") as demo:
     
     def nav_back(flag):
         flag[0] = False
-        return gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(visible=True), gr.update(visible=True)
+        return (
+            gr.update(visible=True), 
+            gr.update(visible=False), 
+            gr.update(visible=False), 
+            gr.update(visible=True), 
+            gr.update(visible=True),
+            gr.update(value="<h2>Awaiting start...</h2>"),
+            gr.update(value="<h3>Awaiting start...</h3>")
+        )
 
-    btn_stop_live.click(nav_back, inputs=[live_flag], outputs=[menu_group, live_group, admin_group, btn_start_live, btn_start_admin])
-    btn_stop_admin.click(nav_back, inputs=[live_flag], outputs=[menu_group, live_group, admin_group, btn_start_live, btn_start_admin])
+    btn_stop_live.click(nav_back, inputs=[live_flag], outputs=[menu_group, live_group, admin_group, btn_start_live, btn_start_admin, live_output, admin_output])
+    btn_stop_admin.click(nav_back, inputs=[live_flag], outputs=[menu_group, live_group, admin_group, btn_start_live, btn_start_admin, live_output, admin_output])
     
     audio_in.stream(fn=handle_audio_stream, inputs=[audio_in, audio_state], concurrency_limit=100)
     btn_start_live.click(fn=live_mode, inputs=[audio_state, ui_queue, live_flag], outputs=[live_output, btn_start_live], concurrency_limit=100)
