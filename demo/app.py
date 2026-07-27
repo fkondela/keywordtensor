@@ -64,7 +64,7 @@ def consume_ui_events(ui_queue, thread, live_flag):
         if cancelled:
             yield gr.update(), gr.update()
         else:
-            yield "<h3>Finished safely.</h3>", gr.update(visible=True)
+            yield "<h2>Finished.</h2>", gr.update(visible=True)
 
 def handle_audio_stream(chunk, state):
     if chunk:
@@ -137,7 +137,7 @@ def live_mode(state, ui_queue, live_flag):
 def admin_mode(password, state, ui_queue, live_flag):
     global _current_word
     if password != os.environ.get("ADMIN_PASS", "dev123"):
-        yield "<h3>Invalid Password!</h3>", gr.update(visible=True)
+        yield "<h2>Invalid Password!</h2>", gr.update(visible=True)
         return
 
     live_flag[0] = True
@@ -176,17 +176,17 @@ def admin_mode(password, state, ui_queue, live_flag):
 
             for i in [3, 2, 1]:
                 if not live_flag[0]: return
-                ui_queue.put(f"<h3>Recording <b>{word_display}</b> - get ready <span style='color:#3b82f6'>{i}</span>...</h3>")
-                time.sleep(0.5)
+                ui_queue.put(f"<h2>Recording <b>{word_display}</b> - get ready <span style='color:#3b82f6'>{i}</span>...</h2>")
+                time.sleep(1.0)
 
             start_recording()
 
             while current_time() < total_time:
                 if not live_flag[0]: return
-                ui_queue.put(f"<h3>Recording <b>{word_display}</b> (<span style='color:#f97316'>{current_time():.1f}s</span> / {total_time:.1f}s)</h3>")
+                ui_queue.put(f"<h2>Recording <b>{word_display}</b> (<span style='color:#f97316'>{current_time():.1f}s</span> / {total_time:.1f}s)</h2>")
                 time.sleep(0.1)
 
-            ui_queue.put("<h3><span style='color:#22c55e'>Done, sending to server...</span></h3>")
+            ui_queue.put("<h2><span style='color:#22c55e'>Done, sending to server...</span></h2>")
         return action
 
     def save_and_upload(cls_name, idx, audio_np, sr):
@@ -199,7 +199,7 @@ def admin_mode(password, state, ui_queue, live_flag):
         try:
             hf_token = os.environ.get("HF_TOKEN")
             if not hf_token:
-                ui_queue.put("<h3>ERROR: Missing HF_TOKEN!</h3>")
+                ui_queue.put("<h2>ERROR: Missing HF_TOKEN!</h2>")
                 return
             from huggingface_hub import HfApi
             HfApi(token=hf_token).upload_file(
@@ -209,9 +209,9 @@ def admin_mode(password, state, ui_queue, live_flag):
                 repo_type="dataset",
                 commit_message=f"Add {cls_name} sample"
             )
-            ui_queue.put(f"<h3>Uploaded: {cls_name}/{filename}</h3>")
+            ui_queue.put(f"<h2>Uploaded: {cls_name}/{filename}</h2>")
         except Exception as e:
-            ui_queue.put(f"<h3>ERROR: {e}</h3>")
+            ui_queue.put(f"<h2>ERROR: {e}</h2>")
         finally:
             if os.path.exists(tmp):
                 try: os.remove(tmp)
@@ -237,13 +237,13 @@ def admin_mode(password, state, ui_queue, live_flag):
             )
             ui_queue.put("DONE")
         except Exception as e:
-            ui_queue.put(f"<h3>ERROR: {e}</h3>")
+            ui_queue.put(f"<h2>ERROR: {e}</h2>")
             ui_queue.put("DONE")
 
     t = threading.Thread(target=worker)
     t.start()
 
-    yield "<h3>Starting...</h3>", gr.update(visible=False)
+    yield "<h2>Starting...</h2>", gr.update(visible=False)
     yield from consume_ui_events(ui_queue, t, live_flag)
 
 custom_css = """
@@ -302,7 +302,7 @@ with gr.Blocks(title="KeywordTensor") as demo:
         btn_stop_admin = gr.Button("Stop", variant="stop")
         admin_pass = gr.Textbox(label="Password", type="password")
         btn_start_admin = gr.Button("Start", variant="primary")
-        admin_output = gr.HTML("<h3>Awaiting start...</h3>")
+        admin_output = gr.HTML("<h2>Awaiting start...</h2>")
 
     audio_in.start_recording(fn=lambda: gr.update(interactive=True), outputs=[btn_confirm])
     btn_confirm.click(fn=lambda: (gr.Accordion(open=False), gr.update(visible=False), gr.update(visible=True)), outputs=[mic_group, btn_confirm, menu_group])
@@ -325,7 +325,7 @@ with gr.Blocks(title="KeywordTensor") as demo:
             gr.update(visible=True), 
             gr.update(visible=True),
             gr.update(value="<h2>Awaiting start...</h2>"),
-            gr.update(value="<h3>Awaiting start...</h3>")
+            gr.update(value="<h2>Awaiting start...</h2>")
         )
 
     btn_stop_live.click(nav_back, inputs=[live_flag], outputs=[menu_group, live_group, admin_group, btn_start_live, btn_start_admin, live_output, admin_output])
