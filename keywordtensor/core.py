@@ -458,16 +458,16 @@ class Engine:
                     actions[cls](start_recording=start_recording, current_time=current_time, total_time=duration)
                 else:
                     for countdown in [3, 2, 1]:
-                        print(f"\rRecording sample {i} for [{cls}] in {countdown}...", end="", flush=True)
+                        print(f"\rRecording sample {i} for [{cls.upper()}] in {countdown}...", end="", flush=True)
                         time.sleep(1)
                         
                     start_recording()
                     
                     while current_time() < duration:
-                        print(f"\rRecording sample {i} for [{cls}] NOW! ({current_time():.1f}s / {duration:.1f}s)", end="", flush=True)
+                        print(f"\rRecording sample {i} for [{cls.upper()}] ({current_time():.1f}s / {duration:.1f}s)", end="", flush=True)
                         time.sleep(0.1)
                         
-                    print(f"\rRecording sample {i} for [{cls}] NOW! ({duration:.1f}s / {duration:.1f}s) - DONE!")             
+                    print(f"\rRecording sample {i} for [{cls.upper()}] ({duration:.1f}s / {duration:.1f}s) - DONE!          ")             
                 t.join()
 
                 if isinstance(bufor_audio, tuple):
