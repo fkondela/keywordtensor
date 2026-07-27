@@ -14,16 +14,19 @@ engine = Engine()
 fake = Faker('pl_PL')
 
 CUSTOM_WORDS = [
-    "prawa", "prawie", "trawa", "sprawa", "praca", "prasa", "pręga", "prąd", "pająk", "poniedziałek",
-    "broda", "wada", "rada", "runda", "frajda", "kreda", "nagroda", "gwiazda", "pogoda", "narada",
-    "osada", "posada", "zgoda", "uroda", "kłoda", "bryła", "brama", "tama", "sowa", "kawa",
-    "lada", "mowa", "wrzawa", "droga", "sroga", "woda", "rzeka", "kometa", "moneta", "kanapa",
-    "rakieta", "gazeta", "lornetka", "latarka", "planeta", "apteka",
-    "marsz", "kosz", "tusz", "plusz", "mysz", "kurz", "kwas", "szum", "wóz", "flet", "gmach",
-    "deszcz", "wiersz", "grosz", "klucz", "mecz", "płacz", "rzecz", "miecz", "piec",
-    "gąszcz", "barszcz", "busz", "kleszcz", "kłos", "głaz", "czas", "las", "wąż",
-    "wąs", "płaszcz", "blask", "fauna", "flora", "farba", "foka", "fala", "flaga", "fosa",
-    "folia", "fotel", "futro", "fasola", "farma"
+    "wrak", "hak", "smak", "znak", "mak", "rak", "brak", "szlak", "fakt",
+    "krok", "skok", "blok", "smok", "sok", "bok", "rok", "szok", "tok",
+    "nic", "nić", "nikt", "niech", "miecz", "sieć", "piec", "pień", "cień",
+    "śni", "dni", "dno", "noc", "moc", "koc",
+    "psy", "sny", "my", "wy", "ty", "by", "co", "po", "kto", "sto",
+    "to", "do", "bo", "no", "go", "za", "na", "ma", "jak",
+    "gdzie", "kiedy", "teraz", "zaraz", "potem", "tutaj", "tam", "stąd",
+    "nos", "los", "włos", "głos", "byt", "mit", "hit", "szczyt",
+    "dal", "bal", "stal", "szal", "pan", "stan", "plan",
+    "kran", "dom", "tom", "prom", "grom", "kot", "lot",
+    "las", "czas", "bas", "kwas", "głaz", "syn",
+    "młyn", "płyn", "pech", "cud",
+    "lud", "trud", "mróz", "wóz", "król", "sól", "ul"
 ]
 _other_cycle = itertools.cycle(["bg", "fn", "bg", "hn"])
 _current_word = ""
@@ -32,7 +35,7 @@ class AudioState:
     def __init__(self):
         self.sr = None
         self.buffer = []
-        self.duration = 3.0
+        self.duration = 1.0
         self.lock = threading.Lock()
 
 def consume_ui_events(ui_queue, thread, live_flag):
@@ -86,19 +89,19 @@ def handle_audio_stream(chunk, state):
 def live_mode(state, ui_queue, live_flag):
     live_flag[0] = True
     with state.lock:
-        state.duration = 3.0
+        state.duration = 1.0
         state.buffer.clear()
         state.sr = None
     with ui_queue.mutex:
         ui_queue.queue.clear()
         
-    def truth_cb():
-        ui_queue.put("<h2>Detected: <span style='color:green'>PRAWDA</span></h2>")
-        time.sleep(3.0)
+    def tak_cb():
+        ui_queue.put("<h2>Detected: <span style='color:green'>TAK</span></h2>")
+        time.sleep(1.0)
         
-    def false_cb():
-        ui_queue.put("<h2>Detected: <span style='color:red'>FAŁSZ</span></h2>")
-        time.sleep(3.0)
+    def nie_cb():
+        ui_queue.put("<h2>Detected: <span style='color:red'>NIE</span></h2>")
+        time.sleep(1.0)
         
     def other_cb():
         ui_queue.put("<h2>Detected: <span style='color:gray'>OTHER</span></h2>")
@@ -110,10 +113,10 @@ def live_mode(state, ui_queue, live_flag):
             
         try:
             engine.listen(
-                "prawda_falsz", 
+                "tak_nie", 
                 actions={
-                    "prawda": truth_cb, 
-                    "falsz": false_cb,
+                    "tak": tak_cb, 
+                    "nie": nie_cb,
                     "other": other_cb
                 }, 
                 source=(state.sr, state.buffer),
@@ -139,7 +142,7 @@ def admin_mode(password, state, ui_queue, live_flag):
 
     live_flag[0] = True
     with state.lock:
-        state.duration = 2.0
+        state.duration = 1.0
         state.buffer.clear()
         state.sr = None
     with ui_queue.mutex:
@@ -161,35 +164,29 @@ def admin_mode(password, state, ui_queue, live_flag):
     def create_action(cls_name):
         def action(start_recording, current_time, total_time):
             word = get_other_prompt() if cls_name == "other" else cls_name
-            word_display = "FAŁSZ" if word == "falsz" else (word.upper() if word else "")
-            display = f"<h2>🗣️ SPEAK: {word_display}</h2>" if word else "<h2>🔇 SAY NOTHING</h2>"
-            preview = f"<h3>Prepare to say: {word_display if word else 'NOTHING (SILENCE)'}</h3>"
-
-            ui_queue.put(preview)
-            for _ in range(20):
-                if not live_flag[0]: return
-                time.sleep(0.1)
+            
+            if not word:
+                word_display = "<span style='color:gray'>🔇 NIC NIE MÓW (Cisza)</span>"
+            elif word.lower() == "tak":
+                word_display = "<span style='color:#22c55e'>TAK</span>"
+            elif word.lower() == "nie":
+                word_display = "<span style='color:#ef4444'>NIE</span>"
+            else:
+                word_display = f"<span style='color:#a855f7'>{word.upper()}</span>"
 
             for i in [3, 2, 1]:
                 if not live_flag[0]: return
-                ui_queue.put(f"<h3>{i}...</h3>")
-                time.sleep(1.0)
+                ui_queue.put(f"<h3>Recording <b>{word_display}</b> - get ready <span style='color:#3b82f6'>{i}</span>...</h3>")
+                time.sleep(0.5)
 
             start_recording()
 
-            if word:
-                delay = random.uniform(0.0, 0.5)
-                while current_time() < delay:
-                    if not live_flag[0]: return
-                    time.sleep(0.02)
-
-            ui_queue.put(display)
-
             while current_time() < total_time:
                 if not live_flag[0]: return
-                time.sleep(0.05)
+                ui_queue.put(f"<h3>Recording <b>{word_display}</b> (<span style='color:#f97316'>{current_time():.1f}s</span> / {total_time:.1f}s)</h3>")
+                time.sleep(0.1)
 
-            ui_queue.put("<h3>Uploading...</h3>")
+            ui_queue.put("<h3><span style='color:#22c55e'>Done, sending to server...</span></h3>")
         return action
 
     def save_and_upload(cls_name, idx, audio_np, sr):
@@ -207,7 +204,7 @@ def admin_mode(password, state, ui_queue, live_flag):
             HfApi(token=hf_token).upload_file(
                 path_or_fileobj=tmp,
                 path_in_repo=f"users_dataset/{cls_name}/{filename}",
-                repo_id="fkondela/KeywordTensor_prawda_falsz",
+                repo_id="fkondela/KeywordTensor_tak_nie",
                 repo_type="dataset",
                 commit_message=f"Add {cls_name} sample"
             )
@@ -226,15 +223,15 @@ def admin_mode(password, state, ui_queue, live_flag):
         try:
             engine.record(
                 target=save_and_upload,
-                classes=["prawda", "falsz", "other"],
+                classes=["tak", "nie", "other"],
                 samples=2,
                 actions={
-                    "prawda": create_action("prawda"),
-                    "falsz":  create_action("falsz"),
+                    "tak": create_action("tak"),
+                    "nie":  create_action("nie"),
                     "other":  create_action("other"),
                 },
                 source=(state.sr, state.buffer),
-                duration=2.0,
+                duration=1.0,
                 stop=lambda: not live_flag[0]
             )
             ui_queue.put("DONE")
@@ -277,7 +274,7 @@ with gr.Blocks(title="KeywordTensor") as demo:
     gr.HTML('''
     <div class="header-container">
         <img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png?v=999" alt="KeywordTensor Logo">
-        <h1>KeywordTensor - prawda_falsz model</h1>
+        <h1>KeywordTensor - tak_nie model</h1>
     </div>
     ''')
     

@@ -28,7 +28,7 @@ KeywordTensor is built for developers who want to integrate voice commands into 
 ## 📦 Pre-trained Models
 Don't have time to record your own dataset? You can use our ready-to-go models.
 
-- **`prawda_falsz`**
+- **`tak_nie`**
   <a href="https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net"><img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png" height="28" align="top" alt="KeywordTensor Logo"><img src="https://img.shields.io/badge/Live_Demo-0089D6?style=for-the-badge" align="top" alt="Live Demo"></a>
   
   [SOON] A highly robust model trained specifically to handle high-pitched children's voices and extremely noisy environments. Designed for live public demonstration - *"Noc Naukowców"* (Researchers' Night) event.
@@ -115,7 +115,7 @@ You have total control over the pipeline. Available parameters in `.train()`:
 ---
 
 ### 4. Live Inference & Custom Actions
-Once trained (or using a pre-trained model like `prawda_falsz`), you can run real-time inference using your microphone.
+Once trained (or using a pre-trained model like `tak_nie`), you can run real-time inference using your microphone.
 
 ```python
 import time
@@ -148,7 +148,7 @@ model.listen(
 
 **Listen parameters:**
 The `.listen()` method itself accepts the following runtime arguments:
-- `model_path` *(required)*: The name of the model to load. You can provide the path to your own trained model, or use the built-in `"prawda_falsz"` model which is highly robust to noise and pitched voices.
+- `model_path` *(required)*: The name of the model to load. You can provide the path to your own trained model, or use the built-in `"tak_nie"` model which is highly robust to noise and pitched voices. 
 - `actions` *(default: prints detection and pauses)*: Optional dictionary mapping detected keywords to your own Python callbacks. If not provided, the engine simply prints the detected word and waits for the sample duration to avoid spam. If you provide callbacks, they execute immediately upon detection, and you must implement any required "cooldown" inside your function (the listen core will pause while your function runs).
 - `min_confidence` *(default: 0.6)*: The probability threshold (0.0 to 1.0) required to trigger the action.
 - `n_averages` *(default: 3)*: Temporal smoothing. Averages the last *N* predictions to prevent false positive clicks.
