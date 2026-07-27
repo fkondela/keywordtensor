@@ -458,7 +458,7 @@ class Engine:
                     actions[cls](start_recording=start_recording, current_time=current_time, total_time=duration)
                 else:
                     for countdown in [3, 2, 1]:
-                        print(f"Recording sample {i} for [{cls}] in {countdown}...")
+                        print(f"\rRecording sample {i} for [{cls}] in {countdown}...", end="", flush=True)
                         time.sleep(1)
                         
                     start_recording()
