@@ -192,29 +192,34 @@ def prepare_files(files_paths, classes, label_func):
 
 #pobieranie danych z: google, mswc, linku, hf, lub folderu
 def resolve_dataset(dataset):
-    urls = []
     paths = []
-    label_func = parent_label
     
-    if dataset == "google":
-        label_func = lambda f: 'other' if 'ESC-50' in str(f) or 'TigreGotico' in str(f) else parent_label(f)
-        urls = ["http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz"]
+    datasets = [dataset] if isinstance(dataset, (str, Path)) else dataset
+    
+    if "google" in datasets or "mswc" in datasets:
         paths.append(Path(snapshot_download(repo_id="TigreGotico/ESC-50", repo_type="dataset")))
-    elif dataset == "mswc":
-        label_func = lambda f: 'other' if 'ESC-50' in str(f) or 'TigreGotico' in str(f) else f.name.split('_')[0]
-        parts = list("012345")
-        urls = [f"https://huggingface.co/datasets/MLCommons/ml_spoken_words/resolve/main/data/opus/pl/train/audio/{p}.tar.gz" for p in parts]
-        paths.append(Path(snapshot_download(repo_id="TigreGotico/ESC-50", repo_type="dataset")))
-    elif dataset.startswith("http"):
-        urls = [dataset]
-        
-    if urls:
-        for u in urls: 
-            paths.append(untar_data(u))
-    elif dataset.startswith("hf:"):
-        paths = [Path(snapshot_download(repo_id=dataset[3:], repo_type="dataset"))]
-    else:
-        paths = [Path(dataset)]
+
+    for d in datasets:
+        d_str = str(d)
+        if d_str == "google":
+            paths.append(untar_data("http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz"))
+        elif d_str == "mswc":
+            parts = list("012345")
+            for p in parts:
+                paths.append(untar_data(f"https://huggingface.co/datasets/MLCommons/ml_spoken_words/resolve/main/data/opus/pl/train/audio/{p}.tar.gz"))
+        elif d_str.startswith("http"):
+            paths.append(untar_data(d_str))
+        elif d_str.startswith("hf:"):
+            paths.append(Path(snapshot_download(repo_id=d_str[3:], repo_type="dataset")))
+        else:
+            paths.append(Path(d))
+
+    def label_func(f):
+        if 'ESC-50' in str(f) or 'TigreGotico' in str(f):
+            return 'other'
+        if "mswc" in datasets and f.suffix == '.opus' and '_' in f.name:
+            return f.name.split('_')[0]
+        return parent_label(f)
 
     return paths, label_func
 
@@ -228,7 +233,7 @@ class Engine:
     def __init__(self):
         self.model_name = None
 
-    def train(self, dataset, classes: list = None, epochs=10, batch_size=32, wd=0.01, eps=0.01, valid_pct=0.1, model_path='myownmodel', duration=1.0, sr=16000):
+    def train(self, dataset, classes: list = None, epochs=10, batch_size=32, wd=0.01, eps=0.01, valid_pct=0.1, model_path='myownmodel', duration=1.0, sr=16000, alpha=0.1):
         if IS_EDGE_VERSION:
             raise RuntimeError("This is the Edge version. To train, install: pip install keywordtensor[train]")
 
@@ -247,7 +252,8 @@ class Engine:
         dls = dsets.dataloaders(bs=batch_size)
 
         model = xresnet18(c_in=1, n_out=len(dls.vocab), pretrained=False)
-        learn = Learner(dls, model, wd=wd, metrics=accuracy, loss_func=LabelSmoothingCrossEntropy(eps=eps))
+        cbs = [MixUp(alpha=alpha)] if alpha > 0 else []
+        learn = Learner(dls, model, wd=wd, metrics=accuracy, loss_func=LabelSmoothingCrossEntropy(eps=eps), cbs=cbs)
         
         res = learn.lr_find(show_plot=False)
         base_lr = res.valley
@@ -451,8 +457,17 @@ class Engine:
                 if cls in actions:
                     actions[cls](start_recording=start_recording, current_time=current_time, total_time=duration)
                 else:
-                    print(f"Recording sample {i} for [{cls}]...")
-                    t.start()             
+                    for countdown in [3, 2, 1]:
+                        print(f"Recording sample {i} for [{cls}] in {countdown}...")
+                        time.sleep(1)
+                        
+                    start_recording()
+                    
+                    while current_time() < duration:
+                        print(f"\rRecording sample {i} for [{cls}] NOW! ({current_time():.1f}s / {duration:.1f}s)", end="", flush=True)
+                        time.sleep(0.1)
+                        
+                    print(f"\rRecording sample {i} for [{cls}] NOW! ({duration:.1f}s / {duration:.1f}s) - DONE!")             
                 t.join()
 
                 if isinstance(bufor_audio, tuple):

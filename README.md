@@ -76,7 +76,7 @@ Available parameters in `.record()`:
   - `"microphone:1"` uses a specific microphone ID. 
   - `my_variable`: You can pass your own audio buffer directly or a tuple `(sample_rate, audio_buffer)`. If you pass a tuple with a different sample rate, KeywordTensor will automatically resample it to `sr` under the hood!
 - `sr` *(default: 16000)*: Sample rate for the recorded audio files.
-- `actions` *(default: prints recording progress)*: Optional dictionary mapping words to custom callbacks. If provided, your callback will receive three kwargs: `start_recording` (a callable you must execute to begin recording), `current_time` (a callable returning elapsed seconds), and `total_time` (the target duration).
+- `actions` *(default: prints live countdown and progress bar)*: Optional dictionary mapping words to custom callbacks. If provided, your callback will receive three kwargs: `start_recording` (a callable you must execute to begin recording), `current_time` (a callable returning elapsed seconds), and `total_time` (the target duration).
 - `stop` *(default: None)*: Optional callback function that returns `True` to stop the recording loop.
 
 ---
@@ -99,7 +99,7 @@ model.train(
 
 **Training parameters:**
 You have total control over the pipeline. Available parameters in `.train()`:
-- `dataset` *(required)*: Path to your audio dataset. You can provide a local folder path, a direct download link, a built-in dataset (`"google"`, `"mswc"`), or any Hugging Face dataset (`"hf:username/repo"`). *(Note: The `"google"` and `"mswc"` datasets don't contain native background noise, but KeywordTensor automatically downloads a supplementary background dataset for them if you request the `"mixed:other"` class!)*
+- `dataset` *(required)*: Path to your audio dataset. You can provide a local folder path, a direct download link, a built-in dataset (`"google"`, `"mswc"`), or any Hugging Face dataset (`"hf:username/repo"`). **You can also provide a list** (e.g. `["my_folder", "mswc"]`) to automatically merge multiple sources! *(Note: The `"google"` and `"mswc"` datasets don't contain native background noise, but KeywordTensor automatically downloads a supplementary background dataset for them if you request the `"mixed:other"` class!)*
 - `classes` *(default: all subfolders)*: List of specific words (folders) you want to recognize. If not provided, it trains on all available folders. **Pro-tip:** Add `"mixed:other"` to the list to let the engine automatically generate a robust "noise/unknown" class! It does this by smartly mixing 50% pure background noise with 50% random words from the other unselected classes in your dataset.
 - `model_path` *(default: 'myownmodel')*: Name of the final exported model.
 - `duration` *(default: 1.0)*: The exact duration of your audio clips in seconds. If an audio clip is shorter, it will be automatically padded with zeros (silence). If it is longer, it will be accurately truncated to match this length.
@@ -110,6 +110,7 @@ You have total control over the pipeline. Available parameters in `.train()`:
 - `learning_rate` *(Automatic)*: The engine dynamically searches for the optimal learning rate for your specific dataset and automatically applies the One-Cycle Policy. We do not expose manual LR tuning because the entire process is fully automated.
 - `wd` *(default: 0.01)*: Weight decay (L2 penalty) to prevent overfitting.
 - `eps` *(default: 0.01)*: Label smoothing epsilon to improve generalization.
+- `alpha` *(default: 0.1)*: MixUp augmentation parameter. Mixes audio samples during training to dramatically improve robustness against background noise and overfitting. A value of `0.1` works best for 1-second keywords. Set to `0.0` to disable.
 
 ---
 
