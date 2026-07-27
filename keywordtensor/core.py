@@ -459,7 +459,7 @@ class Engine:
                 else:
                     for countdown in [3, 2, 1]:
                         print(f"\rRecording sample {i} for [{cls.upper()}] in {countdown}...", end="", flush=True)
-                        time.sleep(0.5)
+                        time.sleep(1)
                         
                     start_recording()
                     
