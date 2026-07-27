@@ -225,7 +225,7 @@ def admin_mode(password, state, ui_queue, live_flag):
             engine.record(
                 target=save_and_upload,
                 classes=["tak", "nie", "other"],
-                samples=2,
+                samples=4,
                 actions={
                     "tak": create_action("tak"),
                     "nie":  create_action("nie"),
