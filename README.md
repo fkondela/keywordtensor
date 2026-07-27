@@ -34,6 +34,9 @@ Don't have time to record your own dataset? You can use our ready-to-go models.
   [SOON] A highly robust model trained specifically to handle high-pitched children's voices and extremely noisy environments. Designed for live public demonstration - *"Noc Naukowców"* (Researchers' Night) event.
 - **More models coming soon!**
 
+> **Acknowledgments:** Pre-trained models in this repository may utilize data from [MSWC](https://mlcommons.org/datasets/spoken-words/) (CC-BY 4.0), [Google Speech Commands](https://research.google/blog/launching-the-speech-commands-dataset/) (CC-BY 4.0), and [ESC-50](https://github.com/karolpiczak/ESC-50) (CC-BY-NC 4.0). 
+> ⚠️ **Note:** Models utilizing ESC-50 for background noise are strictly for **non-commercial use**.
+
 ---
 
 ## 💻 Quick Start & API
