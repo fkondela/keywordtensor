@@ -34,8 +34,7 @@ Don't have time to record your own dataset? You can use our ready-to-go models.
   [SOON] A highly robust model trained specifically to handle high-pitched children's voices and extremely noisy environments. Designed for live public demonstration - *"Noc Naukowców"* (Researchers' Night) event.
 - **More models coming soon!**
 
-> **Acknowledgments:** Pre-trained models in this repository may utilize data from [MSWC](https://huggingface.co/datasets/MLCommons/ml_spoken_words) (CC-BY 4.0), [Google Speech Commands](https://research.google/blog/launching-the-speech-commands-dataset/) (CC-BY 4.0), and [ESC-50](https://github.com/karolpiczak/ESC-50) (CC-BY-NC 4.0). 
-> **Note (Migration in progress):** We are currently migrating away from the ESC-50 dataset for background noise generation to ensure all future models are 100% commercially viable. Until this update is complete, models utilizing ESC-50 for background noise are strictly for non-commercial use.
+> **Acknowledgments:** Pre-trained models in this repository may utilize data from [MSWC](https://huggingface.co/datasets/MLCommons/ml_spoken_words) (CC-BY 4.0), [Google Speech Commands](https://research.google/blog/launching-the-speech-commands-dataset/) (CC-BY 4.0), and [ESC-50](https://github.com/karolpiczak/ESC-50) (CC-BY-NC 4.0).
 
 ---
 
@@ -102,10 +101,10 @@ model.train(
 
 **Training parameters:**
 You have total control over the pipeline. Available parameters in `.train()`:
-- `dataset` *(required)*: Path to your audio dataset. You can provide a local folder path, a direct download link, a built-in dataset (`"google"`, `"mswc"`), or any Hugging Face dataset (`"hf:username/repo"`). **You can also provide a list** (e.g. `["my_folder", "mswc"]`) to automatically merge multiple sources! *(Note: The `"google"` and `"mswc"` datasets don't contain native background noise. However, KeywordTensor automatically downloads a supplementary background dataset (ESC-50) alongside them. You can easily use it by requesting the `"other"` or `"mixed:other"` class!)*
+- `dataset` *(required)*: Path to your audio dataset. You can provide a local folder path, a direct download link, a built-in dataset (`"google"`, `"mswc"`), or any Hugging Face dataset (`"hf:username/repo"`). **You can also provide a list** (e.g. `["my_folder", "mswc"]`) to automatically merge multiple sources! *(Note: The `"google"` and `"mswc"` datasets don't contain native background noise. However, KeywordTensor automatically downloads a supplementary background dataset (CAIMAN-ASR) alongside them. You can easily use it by requesting the `"other"` or `"mixed:other"` class!)*
 - `classes` *(default: all subfolders)*: List of specific words (folders) you want to recognize. If not provided, it trains on all available folders. **Pro-tip:** Add `"mixed:other"` to the list to let the engine automatically generate a robust "noise/unknown" class! It does this by smartly mixing 50% pure background noise with 50% random words from the other unselected classes in your dataset.
 - `model_path` *(default: 'myownmodel')*: Name of the final exported model.
-- `duration` *(default: 1.0)*: The exact duration of your audio clips in seconds. If an audio clip is shorter, it will be automatically padded with zeros (silence). If it is longer, it will be accurately truncated to match this length.
+- `duration` *(default: 1.0)*: The exact duration of your audio clips in seconds. During training, the engine automatically performs random temporal cropping (for long files) and random zero-padding (for short files) to dramatically improve robustness against temporal shifts. Validation files are statically cropped to ensure consistent evaluation.
 - `sr` *(default: 16000)*: The target sample rate of the trained model. If your audio files have a different sample rate, the engine will automatically resample them under the hood.
 - `epochs` *(default: 10)*: Number of training cycles over your dataset.
 - `batch_size` *(default: 32)*: Number of audio samples processed simultaneously.
@@ -114,6 +113,7 @@ You have total control over the pipeline. Available parameters in `.train()`:
 - `wd` *(default: 0.01)*: Weight decay (L2 penalty) to prevent overfitting.
 - `eps` *(default: 0.01)*: Label smoothing epsilon to improve generalization.
 - `alpha` *(default: 0.1)*: MixUp augmentation parameter. Mixes audio samples during training to dramatically improve robustness against background noise and overfitting. A value of `0.1` works best for 1-second keywords. Set to `0.0` to disable.
+- `cbs` *(default: None)*: Optional list of fastai Callbacks to inject into the training loop (e.g., for logging to Weights & Biases or TensorBoard).
 
 ---
 

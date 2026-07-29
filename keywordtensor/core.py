@@ -27,6 +27,7 @@ except ImportError:
 try:
     import torch
     import torch.nn.functional
+    import torch.nn as nn
     import torchaudio
     import torchaudio.transforms as T
     from fastai.vision.all import *
@@ -36,6 +37,8 @@ try:
         L.starmap = lambda self, f: L(itertools.starmap(f, self))
     from torch_audiomentations import Compose, Shift, Gain, PolarityInversion, AddColoredNoise, PitchShift, HighPassFilter, LowPassFilter
     from huggingface_hub import snapshot_download
+    from fastai.data.external import fastai_path
+    from datasets import load_dataset
     IS_EDGE_VERSION = False
 except ImportError:
     IS_EDGE_VERSION = True
@@ -54,22 +57,43 @@ except ImportError:
 
 #zamiana pliku na falę dźwiękową
 class LoadAudio(Transform):
-    def __init__(self, sr=16000, duration=3.0):
+    def __init__(self, sr=16000):
         self.sr = sr
-        self.duration = duration
 
     def encodes(self, file: Path):
         waveform, sr = librosa.load(file, sr=None)
         if sr != self.sr:
             waveform = librosa.resample(waveform, orig_sr=sr, target_sr=self.sr)
-            sr = self.sr
-        waveform = torch.tensor(waveform, dtype=torch.float32).unsqueeze(0)
+        return torch.tensor(waveform, dtype=torch.float32).unsqueeze(0)
 
-        target_length = int(self.duration * sr)
-        if waveform.shape[1] > target_length:
-            waveform = waveform[:, :target_length]
-        elif waveform.shape[1] < target_length:
-            pad_amount = target_length - waveform.shape[1]
+class CropAudioTrain(Transform):
+    split_idx = 0
+    def __init__(self, duration=3.0, sr=16000):
+        self.target_len = int(duration * sr)
+
+    def encodes(self, waveform):
+        current_len = waveform.shape[1]
+        if current_len > self.target_len:
+            start_idx = random.randint(0, current_len - self.target_len)
+            waveform = waveform[:, start_idx : start_idx + self.target_len]
+        elif current_len < self.target_len:
+            pad_total = self.target_len - current_len
+            pad_left = random.randint(0, pad_total)
+            pad_right = pad_total - pad_left
+            waveform = torch.nn.functional.pad(waveform, (pad_left, pad_right))
+        return waveform
+
+class CropAudioValid(Transform):
+    split_idx = 1
+    def __init__(self, duration=3.0, sr=16000):
+        self.target_len = int(duration * sr)
+
+    def encodes(self, waveform):
+        current_len = waveform.shape[1]
+        if current_len > self.target_len:
+            waveform = waveform[:, :self.target_len]
+        elif current_len < self.target_len:
+            pad_amount = self.target_len - current_len
             waveform = torch.nn.functional.pad(waveform, (0, pad_amount))
         return waveform
 
@@ -197,7 +221,18 @@ def resolve_dataset(dataset):
     datasets = [dataset] if isinstance(dataset, (str, Path)) else dataset
     
     if "google" in datasets or "mswc" in datasets:
-        paths.append(Path(snapshot_download(repo_id="TigreGotico/ESC-50", repo_type="dataset")))
+        caiman_cache = fastai_path('data') / "CAIMAN-ASR"
+        
+        if not caiman_cache.exists() or len(list(caiman_cache.glob("*.wav"))) < 1000:
+            ds = load_dataset("Myrtle/CAIMAN-ASR-BackgroundNoise", split="train")
+            caiman_cache.mkdir(parents=True, exist_ok=True)
+            
+            for i, item in progress_bar(enumerate(ds), total=len(ds)):
+                audio_data = item["audio"]
+                save_path = caiman_cache / f"noise_{i}.wav"
+                sf.write(str(save_path), audio_data["array"], audio_data["sampling_rate"])
+                
+        paths.append(caiman_cache)
 
     for d in datasets:
         d_str = str(d)
@@ -215,7 +250,7 @@ def resolve_dataset(dataset):
             paths.append(Path(d))
 
     def label_func(f):
-        if 'ESC-50' in str(f) or 'TigreGotico' in str(f):
+        if 'CAIMAN-ASR' in str(f) or 'Myrtle' in str(f):
             return 'other'
         if "mswc" in datasets and f.suffix == '.opus' and '_' in f.name:
             return f.name.split('_')[0]
@@ -233,7 +268,7 @@ class Engine:
     def __init__(self):
         self.model_name = None
 
-    def train(self, dataset, classes: list = None, epochs=10, batch_size=32, wd=0.01, eps=0.01, valid_pct=0.1, model_path='myownmodel', duration=1.0, sr=16000, alpha=0.1):
+    def train(self, dataset, classes: list = None, epochs=10, batch_size=32, wd=0.01, eps=0.01, valid_pct=0.1, model_path='myownmodel', duration=1.0, sr=16000, alpha=0.1, cbs=None):
         if IS_EDGE_VERSION:
             raise RuntimeError("This is the Edge version. To train, install: pip install keywordtensor[train]")
 
@@ -245,15 +280,22 @@ class Engine:
         norm_spec = NormalizeSpec()
         
         tfms = [
-                [ItemGetter(0), LoadAudio(sr=sr, duration=duration), AudioAugment(sr=sr), WaveformToSpectrogram(sr=sr), norm_spec, SpecAugment()],
+                [ItemGetter(0), LoadAudio(sr=sr), CropAudioTrain(duration=duration, sr=sr), CropAudioValid(duration=duration, sr=sr), AudioAugment(sr=sr), WaveformToSpectrogram(sr=sr), norm_spec, SpecAugment()],
                 [ItemGetter(1), Categorize()]
                 ]
         dsets = Datasets(items, tfms, splits=splits)
         dls = dsets.dataloaders(bs=batch_size)
 
         model = xresnet18(c_in=1, n_out=len(dls.vocab), pretrained=False)
-        cbs = [MixUp(alpha=alpha)] if alpha > 0 else []
-        learn = Learner(dls, model, wd=wd, metrics=accuracy, loss_func=LabelSmoothingCrossEntropy(eps=eps), cbs=cbs)
+        if torch.cuda.device_count() > 1:
+            print(f"Detected {torch.cuda.device_count()} GPUs. Enabling DataParallel.")
+            model = nn.DataParallel(model)
+
+        base_cbs = [MixUp(alpha=alpha)] if alpha > 0 else []
+        user_cbs = cbs if cbs is not None else []
+        all_cbs = base_cbs + user_cbs
+
+        learn = Learner(dls, model, wd=wd, metrics=accuracy, loss_func=LabelSmoothingCrossEntropy(eps=eps), cbs=all_cbs)
         
         res = learn.lr_find(show_plot=False)
         base_lr = res.valley
@@ -272,7 +314,11 @@ class Engine:
         x, y = learn.dls.one_batch()
         dummy_input = x[0].unsqueeze(0).cpu()
 
-        model = learn.model.cpu()
+        model = learn.model
+        if isinstance(model, nn.DataParallel):
+            model = model.module
+            
+        model = model.cpu()
         model.eval()
 
         torch.onnx.export(
