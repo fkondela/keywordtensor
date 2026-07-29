@@ -15,12 +15,14 @@ dependencies = [
     "torch",
     "torchaudio",
     "fastai",
+    "fastcore<=2.1.12",
     "torch-audiomentations",
     "torchcodec",
     "onnx",
     "huggingface_hub",
     "librosa",
-    "soundfile"
+    "soundfile",
+    "datasets"
 ]
 
 [tool.setuptools]
