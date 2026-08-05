@@ -1,2 +1,2 @@
-keywordtensor
+keywordtensor-edge
 pynput

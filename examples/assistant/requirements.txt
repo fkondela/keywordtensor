@@ -1,1 +1,1 @@
-keywordtensor
+keywordtensor-edge
