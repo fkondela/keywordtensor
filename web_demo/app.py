@@ -107,7 +107,7 @@ def run_game(state, live_flag, iframe_code):
                 "spatial_nav",
                 actions={"up": lambda: trigger("up"), "down": lambda: trigger("down"), "left": lambda: trigger("left"), "right": lambda: trigger("right")},
                 min_confidence=0.7, n_averages=1, listen_time=-1,
-                source=(state["sr"], state["buffer"]), stop=lambda: not live_flag[0]
+                source=(state["sr"], state["buffer"]), threads=1, stop=lambda: not live_flag[0]
             )
         except: pass
 
@@ -180,7 +180,7 @@ def live_mode_quiz(state, live_flag):
             state["engine"].listen(
                 "tak_nie", actions={"tak": on_tak, "nie": on_nie, "other": on_other},
                 min_confidence=0.7, n_averages=1, listen_time=-1,
-                source=(state["sr"], state["buffer"]), stop=lambda: not live_flag[0]
+                source=(state["sr"], state["buffer"]), threads=1, stop=lambda: not live_flag[0]
             )
         except: pass
 
@@ -263,7 +263,7 @@ def admin_mode_quiz(password, state, live_flag):
             state["engine"].record(
                 target=save_and_upload, classes=["tak", "nie", "other"], samples=4,
                 actions={"tak": create_action("tak"), "nie": create_action("nie"), "other": create_action("other")},
-                source=(state["sr"], state["buffer"]), duration=1.0, stop=lambda: not live_flag[0]
+                source=(state["sr"], state["buffer"]), duration=1.0, threads=1, stop=lambda: not live_flag[0]
             )
         except Exception as e:
             current_status[0] = f"<h2>ERROR: {str(e)}</h2>"
@@ -326,7 +326,7 @@ def game_mode_quiz(state, live_flag):
             try:
                 state["engine"].listen(
                     "tak_nie", actions={"tak": on_tak, "nie": on_nie, "other": on_other}, 
-                    source=(state["sr"], state["buffer"]), min_confidence=0.7, n_averages=1, listen_time=10.0, stop=lambda: not live_flag[0] or answer_detected[0] is not None
+                    source=(state["sr"], state["buffer"]), min_confidence=0.7, n_averages=1, listen_time=10.0, threads=1, stop=lambda: not live_flag[0] or answer_detected[0] is not None
                 )
             except: pass
         
@@ -343,14 +343,24 @@ def game_mode_quiz(state, live_flag):
         if answer_detected[0] == correct_answer:
             score += 1
             feedback = "<h2><span style='color:green'>Correct!</span></h2>"
-            b64_f, d = speak_sync("Brawo, to poprawna odpowiedź!")
+            text_to_speak = "Brawo, to poprawna odpowiedź!"
         elif answer_detected[0] is None:
             feedback = "<h2><span style='color:gray'>Time's up!</span></h2>"
-            b64_f, d = speak_sync("Czas minął!")
+            text_to_speak = "Czas minął!"
         else:
             feedback = "<h2><span style='color:red'>Wrong!</span></h2>"
-            b64_f, d = speak_sync("Niestety, zła odpowiedź.")
+            text_to_speak = "Niestety, zła odpowiedź."
             
+        # 1. BŁYSKAWICZNA REAKCJA UI (Zatrzymanie timera i pokazanie wyniku bez czekania na audio)
+        yield render_ui("0.0s", feedback_html=feedback), gr.update(visible=False), "", "stop"
+        
+        # Wymuszamy oddanie kontroli (GIL release), aby serwer Gradio zdążył fizycznie wysłać powyższą klatkę przez sieć zanim zablokujemy go na 2 sekundy pobieraniem gTTS!
+        time.sleep(0.05)
+        
+        # 2. GENEROWANIE AUDIO W TLE (UI już się odświeżyło)
+        b64_f, d = speak_sync(text_to_speak)
+        
+        # 3. WYSŁANIE GOTOWEGO DŹWIĘKU
         yield render_ui("0.0s", feedback_html=feedback), gr.update(visible=False), b64_f, "stop"
         
         time_start_sleep = time.time()
