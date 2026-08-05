@@ -6,7 +6,6 @@ import time
 import subprocess
 import tempfile
 import random
-import queue
 import threading
 import itertools
 import collections
@@ -40,7 +39,6 @@ def speak_sync(text):
         print(f"TTS Error: {e}")
         return "", max(1.0, len(text) * 0.08)
 
-# Globals removed to isolate sessions
 
 quiz_questions = [
     ("Czy gepardy potrafią biegać szybciej niż 100 kilometrów na godzinę?", "tak"),
@@ -93,68 +91,41 @@ def handle_audio_stream(chunk, state):
         if len(y.shape) > 1: y = np.mean(y, axis=1)
         if len(y_list := y.tolist()) > 0: state["buffer"].extend(y_list)
 
-def run_engine_in_background(state, live_flag, ui_queue, method_name, **kwargs):
+def run_game(state, live_flag, iframe_code):
+    live_flag[0] = True
+    state["duration"], state["sr"] = 1.0, None
+    target_len = state["buffer"].maxlen
+    if target_len: state["buffer"].extend([0.0] * target_len)
+    
+    last_action = [None]
+    def trigger(direction): last_action[0] = direction; time.sleep(1.0)
+    
     def worker():
         while state["sr"] is None and live_flag[0]: time.sleep(0.05)
         if not live_flag[0]: return
         try:
-            fn = getattr(state["engine"], method_name)
-            fn(**kwargs, source=(state["sr"], state["buffer"]), stop=lambda: not live_flag[0])
-            if method_name == "record": ui_queue.put("DONE")
-        except Exception as e:
-            ui_queue.put(f"<h2>ERROR: {str(e)}</h2>")
-            if method_name == "record": ui_queue.put("DONE")
-    
-    t = threading.Thread(target=worker, daemon=True)
-    t.start()
-    return t
+            state["engine"].listen(
+                "spatial_nav",
+                actions={"up": lambda: trigger("up"), "down": lambda: trigger("down"), "left": lambda: trigger("left"), "right": lambda: trigger("right")},
+                min_confidence=0.7, n_averages=1, listen_time=-1,
+                source=(state["sr"], state["buffer"]), stop=lambda: not live_flag[0]
+            )
+        except: pass
 
-def consume_ui_events(ui_queue, thread, live_flag):
-    error, finished = False, False
-    try:
-        while live_flag[0]:
-            try:
-                msg = ui_queue.get(timeout=0.1)
-                if msg == "DONE":
-                    finished = True
-                    break
-                yield msg, gr.update(visible=False)
-                if "ERROR" in msg:
-                    error, live_flag[0] = True, False
-                    break
-            except queue.Empty: pass
-    finally:
-        cancelled = not live_flag[0] and not finished
-        live_flag[0] = False
-        thread.join(timeout=1.0)
-    if not error:
-        yield (gr.update(), gr.update()) if cancelled else ("<h2>Finished.</h2>", gr.update(visible=True))
+    threading.Thread(target=worker, daemon=True).start()
 
-def run_game(state, live_flag, iframe_code):
-    live_flag[0] = True
-    state["duration"], state["sr"] = 1.0, None
-    state["buffer"].clear()
-    ui_queue = queue.Queue()
-        
-    def trigger(direction): ui_queue.put(direction); time.sleep(1.0)
-
-    t = run_engine_in_background(
-        state, live_flag, ui_queue, "listen",
-        model_path="spatial_nav",
-        actions={"up": lambda: trigger("up"), "down": lambda: trigger("down"), "left": lambda: trigger("left"), "right": lambda: trigger("right")},
-        min_confidence=0.7, n_averages=1, listen_time=-1
-    )
-    
     iframe_div = f"<div style='display:flex; justify-content:center;'>{iframe_code}</div>"
     yield gr.update(visible=False), iframe_div, ""
     
     while live_flag[0]:
-        try:
-            msg = ui_queue.get(timeout=0.1)
+        if last_action[0]:
+            msg = last_action[0]
+            last_action[0] = None
             yield gr.update(visible=False), iframe_div, f"{msg}_{uuid.uuid4()}"
-        except queue.Empty: pass
-    t.join(timeout=1.0)
-    if not live_flag[0]: yield gr.update(), gr.update(), ""
+        else:
+            time.sleep(0.1)
+            
+    yield gr.update(), gr.update(), ""
 
 def get_js_handler(iframe_id, use_which_prop=False):
     key_prop = "which" if use_which_prop else "key"
@@ -195,21 +166,35 @@ js_handler_2048 = get_js_handler("game_iframe_2048", use_which_prop=True)
 def live_mode_quiz(state, live_flag):
     live_flag[0] = True
     state["duration"], state["sr"] = 1.0, None
-    state["buffer"].clear()
-    ui_queue = queue.Queue()
-        
-    def on_tak(): ui_queue.put("<h2>Detected: <span style='color:green'>TAK</span></h2>"); time.sleep(1.0)
-    def on_nie(): ui_queue.put("<h2>Detected: <span style='color:red'>NIE</span></h2>"); time.sleep(1.0)
-    def on_other(): ui_queue.put("<h2>Detected: <span style='color:gray'>OTHER</span></h2>")
-        
-    t = run_engine_in_background(
-        state, live_flag, ui_queue, "listen",
-        model_path="tak_nie", actions={"tak": on_tak, "nie": on_nie, "other": on_other}, 
-        min_confidence=0.7, n_averages=1, listen_time=-1
-    )
+    target_len = state["buffer"].maxlen
+    if target_len: state["buffer"].extend([0.0] * target_len)
     
+    last_html = [""]
+    def on_tak(): last_html[0] = "<h2>Detected: <span style='color:green'>TAK</span></h2>"; time.sleep(1.0)
+    def on_nie(): last_html[0] = "<h2>Detected: <span style='color:red'>NIE</span></h2>"; time.sleep(1.0)
+    def on_other(): last_html[0] = "<h2>Detected: <span style='color:gray'>OTHER</span></h2>"
+
+    def worker():
+        while state["sr"] is None and live_flag[0]: time.sleep(0.05)
+        if not live_flag[0]: return
+        try:
+            state["engine"].listen(
+                "tak_nie", actions={"tak": on_tak, "nie": on_nie, "other": on_other},
+                min_confidence=0.7, n_averages=1, listen_time=-1,
+                source=(state["sr"], state["buffer"]), stop=lambda: not live_flag[0]
+            )
+        except: pass
+
+    threading.Thread(target=worker, daemon=True).start()
+
     yield "<h2>Awaiting audio...</h2>", gr.update(visible=False)
-    yield from consume_ui_events(ui_queue, t, live_flag)
+    while live_flag[0]:
+        if last_html[0]:
+            html_msg = last_html[0]
+            last_html[0] = ""
+            yield html_msg, gr.update(visible=False)
+        time.sleep(0.1)
+    yield "<h2>Finished.</h2>", gr.update(visible=True)
 
 def admin_mode_quiz(password, state, live_flag):
     if password != os.environ.get("ADMIN_PASS", "dev123"):
@@ -218,8 +203,11 @@ def admin_mode_quiz(password, state, live_flag):
 
     live_flag[0] = True
     state["duration"], state["sr"] = 1.0, None
-    state["buffer"].clear()
-    ui_queue = queue.Queue()
+    target_len = state["buffer"].maxlen
+    if target_len: state["buffer"].extend([0.0] * target_len)
+    
+    current_status = ["<h2>Starting...</h2>"]
+    done_flag = [False]
 
     def get_other_prompt():
         kind = next(state["other_cycle"])
@@ -237,16 +225,16 @@ def admin_mode_quiz(password, state, live_flag):
 
             for i in [3, 2, 1]:
                 if not live_flag[0]: return
-                ui_queue.put(f"<h2>Recording <b>{word_display}</b> - get ready <span style='color:#3b82f6'>{i}</span>...</h2>")
+                current_status[0] = f"<h2>Recording <b>{word_display}</b> - get ready <span style='color:#3b82f6'>{i}</span>...</h2>"
                 time.sleep(1.0)
 
             start_recording()
             while current_time() < total_time:
                 if not live_flag[0]: return
-                ui_queue.put(f"<h2>Recording <b>{word_display}</b> (<span style='color:#f97316'>{current_time():.1f}s</span> / {total_time:.1f}s)</h2>")
+                current_status[0] = f"<h2>Recording <b>{word_display}</b> (<span style='color:#f97316'>{current_time():.1f}s</span> / {total_time:.1f}s)</h2>"
                 time.sleep(0.25)
 
-            ui_queue.put("<h2><span style='color:#22c55e'>Done, sending to server...</span></h2>")
+            current_status[0] = "<h2><span style='color:#22c55e'>Done, sending to server...</span></h2>"
         return action
 
     def save_and_upload(cls_name, idx, audio_np, sr):
@@ -257,137 +245,128 @@ def admin_mode_quiz(password, state, live_flag):
         sf.write(tmp, audio_np.squeeze(), sr)
         try:
             hf_token = os.environ.get("HF_TOKEN")
-            if not hf_token: ui_queue.put("<h2>ERROR: Missing HF_TOKEN!</h2>"); return
+            if not hf_token: current_status[0] = "<h2>ERROR: Missing HF_TOKEN!</h2>"; return
             HfApi(token=hf_token).upload_file(
                 path_or_fileobj=tmp, path_in_repo=f"users_dataset/{cls_name}/{filename}",
                 repo_id="fkondela/KeywordTensor_tak_nie", repo_type="dataset", commit_message=f"Add {cls_name} sample"
             )
-            ui_queue.put(f"<h2>Uploaded: {cls_name}/{filename}</h2>")
-        except Exception as e: ui_queue.put(f"<h2>ERROR: {e}</h2>")
+            current_status[0] = f"<h2>Uploaded: {cls_name}/{filename}</h2>"
+        except Exception as e: current_status[0] = f"<h2>ERROR: {e}</h2>"
         finally:
             if os.path.exists(tmp):
                 try: os.remove(tmp)
                 except: pass
 
-    t = run_engine_in_background(
-        state, live_flag, ui_queue, "record",
-        target=save_and_upload, classes=["tak", "nie", "other"], samples=4,
-        actions={"tak": create_action("tak"), "nie": create_action("nie"), "other": create_action("other")},
-        duration=1.0
-    )
-
-    yield "<h2>Starting...</h2>", gr.update(visible=False)
-    yield from consume_ui_events(ui_queue, t, live_flag)
+    def worker():
+        while state["sr"] is None and live_flag[0]: time.sleep(0.05)
+        if not live_flag[0]: return
+        try:
+            state["engine"].record(
+                target=save_and_upload, classes=["tak", "nie", "other"], samples=4,
+                actions={"tak": create_action("tak"), "nie": create_action("nie"), "other": create_action("other")},
+                source=(state["sr"], state["buffer"]), duration=1.0, stop=lambda: not live_flag[0]
+            )
+        except Exception as e:
+            current_status[0] = f"<h2>ERROR: {str(e)}</h2>"
+        finally:
+            done_flag[0] = True
+            
+    threading.Thread(target=worker, daemon=True).start()
+    
+    yield current_status[0], gr.update(visible=False)
+    last_yielded = current_status[0]
+    while live_flag[0] and not done_flag[0]:
+        if current_status[0] != last_yielded:
+            last_yielded = current_status[0]
+            yield last_yielded, gr.update(visible=False)
+        time.sleep(0.25)
+    yield "<h2>Finished.</h2>", gr.update(visible=True)
 
 def game_mode_quiz(state, live_flag):
     live_flag[0] = True
     state["duration"], state["sr"] = 1.0, None
-    state["buffer"].clear()
-    ui_queue = queue.Queue()
+    target_len = state["buffer"].maxlen
+    if target_len: state["buffer"].extend([0.0] * target_len)
+    
+    yield "<h2>Awaiting start...</h2>", gr.update(visible=False), None
+    
+    score = 0
+    total = min(10, len(quiz_questions))
+    selected_questions = random.sample(quiz_questions, total)
+    
+    for idx, (question_text, correct_answer) in enumerate(selected_questions):
+        if not live_flag[0]: break
         
-    def worker():
-        while state["sr"] is None and live_flag[0]: time.sleep(0.05)
-        if not live_flag[0]: return
+        audio_html, duration = speak_sync(question_text)
         
-        score = 0
-        total = min(10, len(quiz_questions))
-        selected_questions = random.sample(quiz_questions, total)
+        def render_ui(time_left_str, feedback_html="", extra_html=""):
+            html = f"<div style='background-color:#f0f9ff; padding:20px; border-radius:12px; border:2px solid #bae6fd; text-align:center; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);'>"
+            html += f"<h2 style='margin-bottom:10px;'>Score: <span style='color:#8b5cf6'>{score}/{total}</span> &nbsp;&nbsp;|&nbsp;&nbsp; Time Left: <span style='color:#3b82f6'>{time_left_str}</span></h2>"
+            html += f"<h3 style='color:#64748b; margin-bottom:5px;'>Question {idx+1}/{total}</h3>"
+            html += f"<h2 style='color:#1e3a8a; font-size:1.8em; margin-bottom:20px;'>{question_text}</h2>"
+            if feedback_html: html += f"<div style='margin-top:20px;'>{feedback_html}</div>"
+            if extra_html: html += extra_html
+            html += "</div>"
+            return html
+            
+        yield render_ui("Speaking...", extra_html=audio_html), gr.update(visible=False), None
         
-        for idx, (question_text, correct_answer) in enumerate(selected_questions):
+        time_start_sleep = time.time()
+        while time.time() - time_start_sleep < (duration + 0.1) and live_flag[0]:
+            time.sleep(0.1)
+            
+        if target_len: state["buffer"].extend([0.0] * target_len)
+        
+        answer_detected = [None]
+        def on_tak(): answer_detected[0] = "tak"
+        def on_nie(): answer_detected[0] = "nie"
+        def on_other(): pass
+        
+        def worker():
+            while state["sr"] is None and live_flag[0]: time.sleep(0.05)
             if not live_flag[0]: return
-            
-            def render_ui(feedback_html="", is_speaking=False, extra_html=""):
-                if is_speaking:
-                    time_left_str = "Speaking..."
-                else:
-                    time_left_str = f"{max(0.0, 10.0 - (time.time() - start_t)):.1f}s"
-                    
-                html = f"<div style='background-color:#f0f9ff; padding:20px; border-radius:12px; border:2px solid #bae6fd; text-align:center; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);'>"
-                html += f"<h2 style='margin-bottom:10px;'>Score: <span style='color:#8b5cf6'>{score}/{total}</span> &nbsp;&nbsp;|&nbsp;&nbsp; Time Left: <span style='color:#3b82f6'>{time_left_str}</span></h2>"
-                html += f"<h3 style='color:#64748b; margin-bottom:5px;'>Question {idx+1}/{total}</h3>"
-                html += f"<h2 style='color:#1e3a8a; font-size:1.8em; margin-bottom:20px;'>{question_text}</h2>"
-                if feedback_html:
-                    html += f"<div style='margin-top:20px;'>{feedback_html}</div>"
-                if extra_html:
-                    html += extra_html
-                html += "</div>"
-                ui_queue.put(html)
-
-            audio_html, duration = speak_sync(question_text)
-            render_ui(is_speaking=True, extra_html=audio_html)
-            
-            time_start_sleep = time.time()
-            while time.time() - time_start_sleep < (duration + 0.1) and live_flag[0]:
-                time.sleep(0.05)
-                
-            state["buffer"].clear()
-            
-            answer_detected = [None]
-            def on_tak(): answer_detected[0] = "tak"
-            def on_nie(): answer_detected[0] = "nie"
-            def on_other(): pass
-            
-            start_t = time.time()
-
-            def timer_thread():
-                while time.time() - start_t < 10.0 and live_flag[0] and answer_detected[0] is None:
-                    render_ui()
-                    time.sleep(0.5)
-                    
-            t_timer = threading.Thread(target=timer_thread)
-            t_timer.start()
-            
             try:
                 state["engine"].listen(
                     "tak_nie", actions={"tak": on_tak, "nie": on_nie, "other": on_other}, 
                     source=(state["sr"], state["buffer"]), min_confidence=0.7, n_averages=1, listen_time=10.0, stop=lambda: not live_flag[0] or answer_detected[0] is not None
                 )
-            except Exception as e:
-                ui_queue.put(f"<h2>ERROR: {str(e)}</h2>")
-                return
-                
-            t_timer.join()
+            except: pass
+        
+        threading.Thread(target=worker, daemon=True).start()
+        
+        start_t = time.time()
+        while time.time() - start_t < 10.0 and live_flag[0] and answer_detected[0] is None:
+            time_left = max(0.0, 10.0 - (time.time() - start_t))
+            yield render_ui(f"{time_left:.1f}s"), gr.update(visible=False), None
+            time.sleep(0.5)
             
-            if not live_flag[0]: return
+        if not live_flag[0]: break
+        
+        if answer_detected[0] == correct_answer:
+            score += 1
+            feedback = "<h2><span style='color:green'>Correct!</span></h2>"
+            a_html, d = speak_sync("Brawo, to poprawna odpowiedź!")
+        elif answer_detected[0] is None:
+            feedback = "<h2><span style='color:gray'>Time's up!</span></h2>"
+            a_html, d = speak_sync("Czas minął!")
+        else:
+            feedback = "<h2><span style='color:red'>Wrong!</span></h2>"
+            a_html, d = speak_sync("Niestety, zła odpowiedź.")
             
-            if answer_detected[0] == correct_answer:
-                score += 1
-                feedback = "<h2><span style='color:green'>Correct!</span></h2>"
-                a_html, d = speak_sync("Brawo, to poprawna odpowiedź!")
-                render_ui(feedback, extra_html=a_html)
-            elif answer_detected[0] is None:
-                feedback = "<h2><span style='color:gray'>Time's up!</span></h2>"
-                a_html, d = speak_sync("Czas minął!")
-                render_ui(feedback, extra_html=a_html)
-            else:
-                feedback = "<h2><span style='color:red'>Wrong!</span></h2>"
-                a_html, d = speak_sync("Niestety, zła odpowiedź.")
-                render_ui(feedback, extra_html=a_html)
-                
-            time_start_sleep = time.time()
-            while time.time() - time_start_sleep < (d + 0.5) and live_flag[0]:
-                time.sleep(0.05)
-            
-        final_html = f"<div style='background-color:#f0f9ff; padding:20px; border-radius:12px; border:2px solid #bae6fd; text-align:center; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);'>"
-        final_html += f"<h2 style='color:#1e3a8a; font-size:2.5em; margin-bottom:15px;'>Thanks for playing! 🎉</h2>"
-        final_html += f"<h3 style='color:#64748b; font-size:1.5em;'>Your Score: <span style='color:#8b5cf6; font-weight:bold;'>{score}/{total}</span></h3>"
-        a_html, d = speak_sync(f"Koniec gry! Twój wynik to {score} punktów.")
-        final_html += a_html
-        final_html += "</div>"
-        ui_queue.put(final_html)
+        yield render_ui("0.0s", feedback_html=feedback, extra_html=a_html), gr.update(visible=False), None
+        
         time_start_sleep = time.time()
-        while time.time() - time_start_sleep < (d + 1.0) and live_flag[0]:
-            time.sleep(0.05)
-        ui_queue.put("DONE")
+        while time.time() - time_start_sleep < (d + 0.5) and live_flag[0]:
+            time.sleep(0.1)
             
-    t = threading.Thread(target=worker)
-    t.start()
+    final_html = f"<div style='background-color:#f0f9ff; padding:20px; border-radius:12px; border:2px solid #bae6fd; text-align:center; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);'>"
+    final_html += f"<h2 style='color:#1e3a8a; font-size:2.5em; margin-bottom:15px;'>Thanks for playing! 🎉</h2>"
+    final_html += f"<h3 style='color:#64748b; font-size:1.5em;'>Your Score: <span style='color:#8b5cf6; font-weight:bold;'>{score}/{total}</span></h3>"
+    a_html, d = speak_sync(f"Koniec gry! Twój wynik to {score} punktów.")
+    final_html += a_html
+    final_html += "</div>"
     
-    yield "<h2>Awaiting start...</h2>", gr.update(visible=False), None
-    
-    # Przekazanie obsługi kolejki do uniwersalnego handlera, lecz z dodatkowym zwracaniem 'None' do tts_out
-    for update in consume_ui_events(ui_queue, t, live_flag):
-        yield update[0], update[1], None
+    yield final_html, gr.update(visible=True), None
 
 with gr.Blocks(title="KeywordTensor") as demo:
     gr.HTML('''
