@@ -42,17 +42,17 @@ Don't have time to record your own dataset? You can use our ready-to-go models.
 - **`media_control`** (`play`, `stop`, `next`, `back`, `other`)
   - **Example — Media Player Control:**
     ```bash
-    mkdir media_player_control && cd media_player_control && curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/media_player_control/media_player_control.py && curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/media_player_control/requirements.txt && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && python media_player_control.py
+    mkdir -p media_player_control && cd media_player_control && curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/media_player_control/media_player_control.py && curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/media_player_control/requirements.txt && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && python media_player_control.py
     ```
   - **Example — Presentation Controller:**
     ```bash
-    mkdir presentation_controller && cd presentation_controller && curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/presentation_controller/presentation_controller.py && curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/presentation_controller/requirements.txt && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && python presentation_controller.py
+    mkdir -p presentation_controller && cd presentation_controller && curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/presentation_controller/presentation_controller.py && curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/presentation_controller/requirements.txt && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && python presentation_controller.py
     ```
 
 - **`assistant`** (`marvin`, `sheila`, `other`)
   - **Example — Desktop Assistant:**
     ```bash
-    mkdir assistant && cd assistant && curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/assistant/assistant.py && curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/assistant/requirements.txt && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && python assistant.py
+    mkdir -p assistant && cd assistant && curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/assistant/assistant.py && curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/assistant/requirements.txt && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && python assistant.py
     ```
 
 - **`smarthome_basic`** (`on`, `off`, `other`) - **SOON**
