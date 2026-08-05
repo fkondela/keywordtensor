@@ -45,6 +45,7 @@ Don't have time to record your own dataset? You can use our ready-to-go models.
     mkdir media_player_control && cd media_player_control
     curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/media_player_control/media_player_control.py
     curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/media_player_control/requirements.txt
+    python3 -m venv .venv && source .venv/bin/activate
     pip install -r requirements.txt && python media_player_control.py
     ```
   - **Presentation Controller:**
@@ -52,6 +53,7 @@ Don't have time to record your own dataset? You can use our ready-to-go models.
     mkdir presentation_controller && cd presentation_controller
     curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/presentation_controller/presentation_controller.py
     curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/presentation_controller/requirements.txt
+    python3 -m venv .venv && source .venv/bin/activate
     pip install -r requirements.txt && python presentation_controller.py
     ```
 
@@ -61,6 +63,7 @@ Don't have time to record your own dataset? You can use our ready-to-go models.
     mkdir assistant && cd assistant
     curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/assistant/assistant.py
     curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/assistant/requirements.txt
+    python3 -m venv .venv && source .venv/bin/activate
     pip install -r requirements.txt && python assistant.py
     ```
 
