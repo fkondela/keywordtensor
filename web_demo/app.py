@@ -40,26 +40,7 @@ def speak_sync(text):
         print(f"TTS Error: {e}")
         return "", max(1.0, len(text) * 0.08)
 
-engine = Engine()
-fake = Faker('pl_PL')
-
-CUSTOM_WORDS = [
-    "wrak", "hak", "smak", "znak", "mak", "rak", "brak", "szlak", "fakt",
-    "krok", "skok", "blok", "smok", "sok", "bok", "rok", "szok", "tok",
-    "nic", "nić", "nikt", "niech", "miecz", "sieć", "piec", "pień", "cień",
-    "śni", "dni", "dno", "noc", "moc", "koc",
-    "psy", "sny", "my", "wy", "ty", "by", "co", "po", "kto", "sto",
-    "to", "do", "bo", "no", "go", "za", "na", "ma", "jak",
-    "gdzie", "kiedy", "teraz", "zaraz", "potem", "tutaj", "tam", "stąd",
-    "nos", "los", "włos", "głos", "byt", "mit", "hit", "szczyt",
-    "dal", "bal", "stal", "szal", "pan", "stan", "plan",
-    "kran", "dom", "tom", "prom", "grom", "kot", "lot",
-    "las", "czas", "bas", "kwas", "głaz", "syn",
-    "młyn", "płyn", "pech", "cud",
-    "lud", "trud", "mróz", "wóz", "król", "sól", "ul"
-]
-_other_cycle = itertools.cycle(["bg", "fn", "bg", "hn"])
-_current_word = ""
+# Globals removed to isolate sessions
 
 quiz_questions = [
     ("Czy gepardy potrafią biegać szybciej niż 100 kilometrów na godzinę?", "tak"),
@@ -117,7 +98,7 @@ def run_engine_in_background(state, live_flag, ui_queue, method_name, **kwargs):
         while state["sr"] is None and live_flag[0]: time.sleep(0.05)
         if not live_flag[0]: return
         try:
-            fn = getattr(engine, method_name)
+            fn = getattr(state["engine"], method_name)
             fn(**kwargs, source=(state["sr"], state["buffer"]), stop=lambda: not live_flag[0])
             if method_name == "record": ui_queue.put("DONE")
         except Exception as e:
@@ -231,7 +212,6 @@ def live_mode_quiz(state, live_flag):
     yield from consume_ui_events(ui_queue, t, live_flag)
 
 def admin_mode_quiz(password, state, live_flag):
-    global _current_word
     if password != os.environ.get("ADMIN_PASS", "dev123"):
         yield "<h2>Invalid Password!</h2>", gr.update(visible=True)
         return
@@ -242,11 +222,10 @@ def admin_mode_quiz(password, state, live_flag):
     ui_queue = queue.Queue()
 
     def get_other_prompt():
-        global _current_word
-        kind = next(_other_cycle)
-        if kind == "bg": _current_word = "background"; return None
-        if kind == "fn": _current_word = fake.word().lower(); return _current_word
-        _current_word = random.choice(CUSTOM_WORDS); return _current_word
+        kind = next(state["other_cycle"])
+        if kind == "bg": state["current_word"] = "background"; return None
+        if kind == "fn": state["current_word"] = fake.word().lower(); return state["current_word"]
+        state["current_word"] = random.choice(CUSTOM_WORDS); return state["current_word"]
 
     def create_action(cls_name):
         def action(start_recording, current_time, total_time):
@@ -265,14 +244,14 @@ def admin_mode_quiz(password, state, live_flag):
             while current_time() < total_time:
                 if not live_flag[0]: return
                 ui_queue.put(f"<h2>Recording <b>{word_display}</b> (<span style='color:#f97316'>{current_time():.1f}s</span> / {total_time:.1f}s)</h2>")
-                time.sleep(0.1)
+                time.sleep(0.25)
 
             ui_queue.put("<h2><span style='color:#22c55e'>Done, sending to server...</span></h2>")
         return action
 
     def save_and_upload(cls_name, idx, audio_np, sr):
         if not live_flag[0]: return
-        label = _current_word if cls_name == "other" else cls_name
+        label = state["current_word"] if cls_name == "other" else cls_name
         filename = f"{label}_{int(time.time())}_{random.randint(1000, 9999)}_{idx}.wav"
         tmp = f"/tmp/{filename}"
         sf.write(tmp, audio_np.squeeze(), sr)
@@ -353,13 +332,13 @@ def game_mode_quiz(state, live_flag):
             def timer_thread():
                 while time.time() - start_t < 10.0 and live_flag[0] and answer_detected[0] is None:
                     render_ui()
-                    time.sleep(0.1)
+                    time.sleep(0.5)
                     
             t_timer = threading.Thread(target=timer_thread)
             t_timer.start()
             
             try:
-                engine.listen(
+                state["engine"].listen(
                     "tak_nie", actions={"tak": on_tak, "nie": on_nie, "other": on_other}, 
                     source=(state["sr"], state["buffer"]), min_confidence=0.7, n_averages=1, listen_time=10.0, stop=lambda: not live_flag[0] or answer_detected[0] is not None
                 )
@@ -418,7 +397,34 @@ with gr.Blocks(title="KeywordTensor") as demo:
     </div>
     ''')
     
-    state = gr.State(lambda: {"sr": None, "buffer": collections.deque(), "duration": 1.0})
+    fake = Faker('pl_PL')
+    CUSTOM_WORDS = [
+        "wrak", "hak", "smak", "znak", "mak", "rak", "brak", "szlak", "fakt",
+        "krok", "skok", "blok", "smok", "sok", "bok", "rok", "szok", "tok",
+        "nic", "nić", "nikt", "niech", "miecz", "sieć", "piec", "pień", "cień",
+        "śni", "dni", "dno", "noc", "moc", "koc",
+        "psy", "sny", "my", "wy", "ty", "by", "co", "po", "kto", "sto",
+        "to", "do", "bo", "no", "go", "za", "na", "ma", "jak",
+        "gdzie", "kiedy", "teraz", "zaraz", "potem", "tutaj", "tam", "stąd",
+        "nos", "los", "włos", "głos", "byt", "mit", "hit", "szczyt",
+        "dal", "bal", "stal", "szal", "pan", "stan", "plan",
+        "kran", "dom", "tom", "prom", "grom", "kot", "lot",
+        "las", "czas", "bas", "kwas", "głaz", "syn",
+        "młyn", "płyn", "pech", "cud",
+        "lud", "trud", "mróz", "wóz", "król", "sól", "ul"
+    ]
+
+    def init_user_state():
+        return {
+            "sr": None, 
+            "buffer": collections.deque(), 
+            "duration": 1.0,
+            "engine": Engine(),
+            "other_cycle": itertools.cycle(["bg", "fn", "bg", "hn"]),
+            "current_word": ""
+        }
+
+    state = gr.State(init_user_state)
     live_flag = gr.State(lambda: [False])
     
     with gr.Accordion("Step 1: Select Microphone", open=True) as mic_group:
