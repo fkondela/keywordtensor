@@ -33,8 +33,7 @@ def speak_sync(text):
         
         fp.seek(0)
         b64 = base64.b64encode(fp.read()).decode('utf-8')
-        audio_html = f"<audio autoplay style='display:none;' src='data:audio/mp3;base64,{b64}'></audio>"
-        return audio_html, duration
+        return b64, duration
     except Exception as e:
         print(f"TTS Error: {e}")
         return "", max(1.0, len(text) * 0.08)
@@ -288,7 +287,7 @@ def game_mode_quiz(state, live_flag):
     target_len = state["buffer"].maxlen
     if target_len: state["buffer"].extend([0.0] * target_len)
     
-    yield "<h2>Awaiting start...</h2>", gr.update(visible=False), None
+    yield "<h2>Awaiting start...</h2>", gr.update(visible=False), None, None
     
     score = 0
     total = min(10, len(quiz_questions))
@@ -297,19 +296,18 @@ def game_mode_quiz(state, live_flag):
     for idx, (question_text, correct_answer) in enumerate(selected_questions):
         if not live_flag[0]: break
         
-        audio_html, duration = speak_sync(question_text)
+        b64, duration = speak_sync(question_text)
         
-        def render_ui(time_left_str, feedback_html="", extra_html=""):
+        def render_ui(time_left_str, feedback_html=""):
             html = f"<div style='background-color:#f0f9ff; padding:20px; border-radius:12px; border:2px solid #bae6fd; text-align:center; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);'>"
-            html += f"<h2 style='margin-bottom:10px;'>Score: <span style='color:#8b5cf6'>{score}/{total}</span> &nbsp;&nbsp;|&nbsp;&nbsp; Time Left: <span style='color:#3b82f6'>{time_left_str}</span></h2>"
+            html += f"<h2 style='margin-bottom:10px; color:#1e293b;'>Score: <span style='color:#8b5cf6'>{score}/{total}</span> &nbsp;&nbsp;|&nbsp;&nbsp; Time Left: <span id='qt' style='color:#3b82f6'>{time_left_str}</span></h2>"
             html += f"<h3 style='color:#64748b; margin-bottom:5px;'>Question {idx+1}/{total}</h3>"
             html += f"<h2 style='color:#1e3a8a; font-size:1.8em; margin-bottom:20px;'>{question_text}</h2>"
             if feedback_html: html += f"<div style='margin-top:20px;'>{feedback_html}</div>"
-            if extra_html: html += extra_html
             html += "</div>"
             return html
             
-        yield render_ui("Speaking...", extra_html=audio_html), gr.update(visible=False), None
+        yield render_ui("Speaking..."), gr.update(visible=False), b64, "stop"
         
         time_start_sleep = time.time()
         while time.time() - time_start_sleep < (duration + 0.1) and live_flag[0]:
@@ -335,25 +333,25 @@ def game_mode_quiz(state, live_flag):
         threading.Thread(target=worker, daemon=True).start()
         
         start_t = time.time()
+        yield render_ui("10.0s"), gr.update(visible=False), "", "10.0"
+        
         while time.time() - start_t < 10.0 and live_flag[0] and answer_detected[0] is None:
-            time_left = max(0.0, 10.0 - (time.time() - start_t))
-            yield render_ui(f"{time_left:.1f}s"), gr.update(visible=False), None
-            time.sleep(0.5)
+            time.sleep(0.1)
             
         if not live_flag[0]: break
         
         if answer_detected[0] == correct_answer:
             score += 1
             feedback = "<h2><span style='color:green'>Correct!</span></h2>"
-            a_html, d = speak_sync("Brawo, to poprawna odpowiedź!")
+            b64_f, d = speak_sync("Brawo, to poprawna odpowiedź!")
         elif answer_detected[0] is None:
             feedback = "<h2><span style='color:gray'>Time's up!</span></h2>"
-            a_html, d = speak_sync("Czas minął!")
+            b64_f, d = speak_sync("Czas minął!")
         else:
             feedback = "<h2><span style='color:red'>Wrong!</span></h2>"
-            a_html, d = speak_sync("Niestety, zła odpowiedź.")
+            b64_f, d = speak_sync("Niestety, zła odpowiedź.")
             
-        yield render_ui("0.0s", feedback_html=feedback, extra_html=a_html), gr.update(visible=False), None
+        yield render_ui("0.0s", feedback_html=feedback), gr.update(visible=False), b64_f, "stop"
         
         time_start_sleep = time.time()
         while time.time() - time_start_sleep < (d + 0.5) and live_flag[0]:
@@ -362,11 +360,10 @@ def game_mode_quiz(state, live_flag):
     final_html = f"<div style='background-color:#f0f9ff; padding:20px; border-radius:12px; border:2px solid #bae6fd; text-align:center; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);'>"
     final_html += f"<h2 style='color:#1e3a8a; font-size:2.5em; margin-bottom:15px;'>Thanks for playing! 🎉</h2>"
     final_html += f"<h3 style='color:#64748b; font-size:1.5em;'>Your Score: <span style='color:#8b5cf6; font-weight:bold;'>{score}/{total}</span></h3>"
-    a_html, d = speak_sync(f"Koniec gry! Twój wynik to {score} punktów.")
-    final_html += a_html
+    b64_final, d = speak_sync(f"Koniec gry! Twój wynik to {score} punktów.")
     final_html += "</div>"
     
-    yield final_html, gr.update(visible=True), None
+    yield final_html, gr.update(visible=True), b64_final, "stop"
 
 with gr.Blocks(title="KeywordTensor") as demo:
     gr.HTML('''
@@ -455,6 +452,7 @@ with gr.Blocks(title="KeywordTensor") as demo:
         btn_start_quiz_game = gr.Button("Start", variant="primary")
         quiz_game_html = gr.HTML("<h2>Awaiting start...</h2>")
         quiz_game_tts_out = gr.Textbox(visible=False)
+        quiz_game_timer_out = gr.Textbox(visible=False)
 
     audio_in.start_recording(fn=lambda: gr.update(interactive=True), outputs=[btn_confirm])
     audio_in.stream(handle_audio_stream, inputs=[audio_in, state], outputs=None, concurrency_limit=100)
@@ -488,17 +486,13 @@ with gr.Blocks(title="KeywordTensor") as demo:
     btn_start_quiz_live.click(live_mode_quiz, inputs=[state, live_flag], outputs=[quiz_live_html, btn_start_quiz_live], concurrency_limit=100)
     btn_start_admin.click(admin_mode_quiz, inputs=[admin_pass, state, live_flag], outputs=[admin_html, btn_start_admin], concurrency_limit=100)
     
-    btn_start_quiz_game.click(game_mode_quiz, inputs=[state, live_flag], outputs=[quiz_game_html, btn_start_quiz_game, quiz_game_tts_out], concurrency_limit=100)
+    btn_start_quiz_game.click(game_mode_quiz, inputs=[state, live_flag], outputs=[quiz_game_html, btn_start_quiz_game, quiz_game_tts_out, quiz_game_timer_out], concurrency_limit=100, js="() => { let a=document.getElementById('ap')||document.createElement('audio'); a.id='ap'; a.style.display='none'; document.body.appendChild(a); a.src='data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjEyLjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIAD+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+AAAAAExhdmM1OC4xMzQAAAAAAAAAAAAAAAAkAEQAAAAAAAASIQAAAABJRU5E'; a.play().catch(()=>{}); return []; }")
     
-    js_tts = """
-    (text) => {
-        if (!text) return;
-        let u = new SpeechSynthesisUtterance(text);
-        u.lang = 'pl-PL';
-        window.speechSynthesis.speak(u);
-    }
-    """
-    quiz_game_tts_out.change(None, inputs=[quiz_game_tts_out], js=js_tts)
+    js_play = "(b) => { if(b){ let a=document.getElementById('ap'); if(a){ a.src='data:audio/mp3;base64,'+b; a.play().catch(console.error); } } }"
+    quiz_game_tts_out.change(None, inputs=[quiz_game_tts_out], js=js_play)
+    
+    js_timer = "(d) => { clearInterval(window.qT); if(!d||d==='stop')return; let t=parseFloat(d), el=document.getElementById('qt'); window.qT=setInterval(()=>{t=Math.max(0,t-0.1); if(el)el.innerText=t.toFixed(1)+'s'; if(t<=0)clearInterval(window.qT)},100); }"
+    quiz_game_timer_out.change(None, inputs=[quiz_game_timer_out], js=js_timer)
 
     def stop_and_return_menu(flag, state_dict, to_main):
         flag[0] = False
@@ -509,7 +503,7 @@ with gr.Blocks(title="KeywordTensor") as demo:
             gr.update(value="<h2>Awaiting start...</h2>"), gr.update(value="<h2>Awaiting start...</h2>"), gr.update(value="<h2>Awaiting start...</h2>"), gr.update(value="<h2>Awaiting start...</h2>"), gr.update(value="<h2>Awaiting start...</h2>")
         )
 
-    cancel_js = "(f, s) => { window.speechSynthesis.cancel(); return [f, s]; }"
+    cancel_js = "(f, s) => { let a=document.getElementById('ap'); if(a) a.pause(); clearInterval(window.qT); return [f, s]; }"
 
     btn_stop_soko.click(lambda f, s: stop_and_return_menu(f, s, True), inputs=[live_flag, state], outputs=[menu_group_main, menu_group_quiz, soko_group, g2048_group, quiz_live_group, quiz_admin_group, quiz_game_group, soko_html, g2048_html, quiz_live_html, admin_html, quiz_game_html], js=cancel_js)
     btn_stop_2048.click(lambda f, s: stop_and_return_menu(f, s, True), inputs=[live_flag, state], outputs=[menu_group_main, menu_group_quiz, soko_group, g2048_group, quiz_live_group, quiz_admin_group, quiz_game_group, soko_html, g2048_html, quiz_live_html, admin_html, quiz_game_html], js=cancel_js)
