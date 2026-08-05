@@ -29,28 +29,28 @@ KeywordTensor is built for developers who want to integrate voice commands into 
 Don't have time to record your own dataset? You can use our ready-to-go models.
 
 - **`tak_nie`** (`tak`, `nie`, `other`)
-  - <font color="#0089D6"><b>Example</b></font> — **Quiz:** <a href="https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net"><img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png" height="28" align="top" alt="KeywordTensor Logo"><img src="https://img.shields.io/badge/Live_Demo-0089D6?style=for-the-badge" align="top" alt="Live Demo"></a>
+  - **Example — Quiz:** <a href="https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net"><img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png" height="28" align="top" alt="KeywordTensor Logo"><img src="https://img.shields.io/badge/Live_Demo-0089D6?style=for-the-badge" align="top" alt="Live Demo"></a>
     
     [SOON] A highly robust model trained specifically to handle high-pitched children's voices and extremely noisy environments. Designed for live public demonstration - *"Noc Naukowców"* (Researchers' Night) event.
 
 - **`spatial_nav`** (`backward`, `down`, `forward`, `go`, `left`, `no`, `right`, `stop`, `up`, `yes`, `other`)
-  - <font color="#0089D6"><b>Example</b></font> — **Sokoban:** <a href="https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net"><img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png" height="28" align="top" alt="KeywordTensor Logo"><img src="https://img.shields.io/badge/Live_Demo-0089D6?style=for-the-badge" align="top" alt="Live Demo"></a>
-  - <font color="#0089D6"><b>Example</b></font> — **2048:** <a href="https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net"><img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png" height="28" align="top" alt="KeywordTensor Logo"><img src="https://img.shields.io/badge/Live_Demo-0089D6?style=for-the-badge" align="top" alt="Live Demo"></a>
+  - **Example — Sokoban:** <a href="https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net"><img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png" height="28" align="top" alt="KeywordTensor Logo"><img src="https://img.shields.io/badge/Live_Demo-0089D6?style=for-the-badge" align="top" alt="Live Demo"></a>
+  - **Example — 2048:** <a href="https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net"><img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png" height="28" align="top" alt="KeywordTensor Logo"><img src="https://img.shields.io/badge/Live_Demo-0089D6?style=for-the-badge" alt="Live Demo"></a>
 
 - **`numbers`** (`zero`, `one`, `two`, `three`, `four`, `five`, `six`, `seven`, `eight`, `nine`, `other`)
 
 - **`media_control`** (`play`, `stop`, `next`, `back`, `other`)
-  - <font color="#0089D6"><b>Example</b></font> — **Media Player Control:**
+  - **Example — Media Player Control:**
     ```bash
     mkdir media_player_control && cd media_player_control && curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/media_player_control/media_player_control.py && curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/media_player_control/requirements.txt && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && python media_player_control.py
     ```
-  - <font color="#0089D6"><b>Example</b></font> — **Presentation Controller:**
+  - **Example — Presentation Controller:**
     ```bash
     mkdir presentation_controller && cd presentation_controller && curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/presentation_controller/presentation_controller.py && curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/presentation_controller/requirements.txt && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && python presentation_controller.py
     ```
 
 - **`assistant`** (`marvin`, `sheila`, `other`)
-  - <font color="#0089D6"><b>Example</b></font> — **Desktop Assistant:**
+  - **Example — Desktop Assistant:**
     ```bash
     mkdir assistant && cd assistant && curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/assistant/assistant.py && curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/assistant/requirements.txt && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && python assistant.py
     ```
