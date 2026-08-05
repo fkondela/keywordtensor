@@ -28,13 +28,49 @@ KeywordTensor is built for developers who want to integrate voice commands into 
 ## 📦 Pre-trained Models
 Don't have time to record your own dataset? You can use our ready-to-go models.
 
-- **`tak_nie`**
-  <a href="https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net"><img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png" height="28" align="top" alt="KeywordTensor Logo"><img src="https://img.shields.io/badge/Live_Demo-0089D6?style=for-the-badge" align="top" alt="Live Demo"></a>
-  
-  [SOON] A highly robust model trained specifically to handle high-pitched children's voices and extremely noisy environments. Designed for live public demonstration - *"Noc Naukowców"* (Researchers' Night) event.
-- **More models coming soon!**
+- **`tak_nie`** (`tak`, `nie`, `other`)
+  - **Quiz:** <a href="https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net"><img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png" height="28" align="top" alt="KeywordTensor Logo"><img src="https://img.shields.io/badge/Live_Demo-0089D6?style=for-the-badge" align="top" alt="Live Demo"></a>
+    
+    [SOON] A highly robust model trained specifically to handle high-pitched children's voices and extremely noisy environments. Designed for live public demonstration - *"Noc Naukowców"* (Researchers' Night) event.
 
-> **Acknowledgments:** Pre-trained models in this repository may utilize data from [MSWC](https://huggingface.co/datasets/MLCommons/ml_spoken_words) (CC-BY 4.0), [Google Speech Commands](https://research.google/blog/launching-the-speech-commands-dataset/) (CC-BY 4.0), and [ESC-50](https://github.com/karolpiczak/ESC-50) (CC-BY-NC 4.0).
+- **`spatial_nav`** (`backward`, `down`, `forward`, `go`, `left`, `no`, `right`, `stop`, `up`, `yes`, `other`)
+  - **Sokoban:** <a href="https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net"><img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png" height="28" align="top" alt="KeywordTensor Logo"><img src="https://img.shields.io/badge/Live_Demo-0089D6?style=for-the-badge" align="top" alt="Live Demo"></a>
+  - **2048:** <a href="https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net"><img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png" height="28" align="top" alt="KeywordTensor Logo"><img src="https://img.shields.io/badge/Live_Demo-0089D6?style=for-the-badge" align="top" alt="Live Demo"></a>
+
+- **`numbers`** (`zero`, `one`, `two`, `three`, `four`, `five`, `six`, `seven`, `eight`, `nine`, `other`)
+
+- **`media_control`** (`play`, `stop`, `next`, `back`, `other`)
+  - **Media Player Control:**
+    ```bash
+    mkdir media_player_control && cd media_player_control
+    curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/media_player_control/media_player_control.py
+    curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/media_player_control/requirements.txt
+    pip install -r requirements.txt && python media_player_control.py
+    ```
+  - **Presentation Controller:**
+    ```bash
+    mkdir presentation_controller && cd presentation_controller
+    curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/presentation_controller/presentation_controller.py
+    curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/presentation_controller/requirements.txt
+    pip install -r requirements.txt && python presentation_controller.py
+    ```
+
+- **`assistant`** (`marvin`, `sheila`, `other`)
+  - **Desktop Assistant:**
+    ```bash
+    mkdir assistant && cd assistant
+    curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/assistant/assistant.py
+    curl -O https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/assistant/requirements.txt
+    pip install -r requirements.txt && python assistant.py
+    ```
+
+- **`smarthome_basic`** (`on`, `off`, `other`) - **SOON**
+
+- **`smarthome_rooms`** (`bedroom`, `kitchen`, `livingroom`, `bathroom`, `garage`, `other`) - **SOON**
+
+- **`smarthome_devices`** (`lights`, `television`, `heater`, `door`, `window`, `blinds`, `other`) - **SOON**
+
+> **Acknowledgments:** Pre-trained models in this repository may utilize data from [MSWC](https://huggingface.co/datasets/MLCommons/ml_spoken_words) (CC-BY 4.0), [Google Speech Commands](https://research.google/blog/launching-the-speech-commands-dataset/) (CC-BY 4.0), and [CAIMAN-ASR-BackgroundNoise](https://huggingface.co/datasets/Myrtle/CAIMAN-ASR-BackgroundNoise) (CC-BY 4.0).
 
 ---
 
@@ -101,7 +137,7 @@ model.train(
 
 **Training parameters:**
 You have total control over the pipeline. Available parameters in `.train()`:
-- `dataset` *(required)*: Path to your audio dataset. You can provide a local folder path, a direct download link, a built-in dataset (`"google"`, `"mswc"`), or any Hugging Face dataset (`"hf:username/repo"`). **You can also provide a list** (e.g. `["my_folder", "mswc"]`) to automatically merge multiple sources! *(Note: The `"google"` and `"mswc"` datasets don't contain native background noise. However, KeywordTensor automatically downloads a supplementary background dataset (CAIMAN-ASR) alongside them. You can easily use it by requesting the `"other"` or `"mixed:other"` class!)*
+- `dataset` *(required)*: Path to your audio dataset. You can provide a local folder path, a direct download link, a built-in dataset ([`"google"`](https://huggingface.co/datasets/speech_commands) (~2.3GB), [`"mswc"`](https://huggingface.co/datasets/MLCommons/ml_spoken_words) (~35GB), [`"mswc-pl"`](https://huggingface.co/datasets/MLCommons/ml_spoken_words) (~2GB)), or any Hugging Face dataset (`"hf:username/repo"`). **You can also provide a list** (e.g. `["my_folder", "mswc-pl"]`) to automatically merge multiple sources! *(Note: The `"google"`, `"mswc"`, and `"mswc-pl"` datasets don't contain native background noise. However, KeywordTensor automatically downloads a supplementary background dataset ([CAIMAN-ASR](https://huggingface.co/datasets/Myrtle/CAIMAN-ASR-BackgroundNoise)) alongside them. You can easily use it by requesting the `"other"` or `"mixed:other"` class!)*
 - `classes` *(default: all subfolders)*: List of specific words (folders) you want to recognize. If not provided, it trains on all available folders. **Pro-tip:** Add `"mixed:other"` to the list to let the engine automatically generate a robust "noise/unknown" class! It does this by smartly mixing 50% pure background noise with 50% random words from the other unselected classes in your dataset.
 - `model_path` *(default: 'myownmodel')*: Name of the final exported model.
 - `duration` *(default: 1.0)*: The exact duration of your audio clips in seconds. During training, the engine automatically performs random temporal cropping (for long files) and random zero-padding (for short files) to dramatically improve robustness against temporal shifts. Validation files are statically cropped to ensure consistent evaluation.

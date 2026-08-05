@@ -1,6 +1,8 @@
 
 #wszystkie importy
 import json
+import urllib.request
+from urllib.error import URLError, HTTPError
 import onnxruntime as ort
 from pathlib import Path
 import os
@@ -218,13 +220,21 @@ def prepare_files(files_paths, classes, label_func):
 def resolve_dataset(dataset):
     paths = []
     
+    archive_base = Path("~/.fastai/archive").expanduser()
+    data_base = Path("~/.fastai/data").expanduser()
+    
     datasets = [dataset] if isinstance(dataset, (str, Path)) else dataset
     
-    if "google" in datasets or "mswc" in datasets:
-        caiman_cache = fastai_path('data') / "CAIMAN-ASR"
+    if any(x in datasets for x in ["google", "mswc", "mswc-pl"]):
+        caiman_cache = data_base / "CAIMAN-ASR"
         
         if not caiman_cache.exists() or len(list(caiman_cache.glob("*.wav"))) < 1000:
-            ds = load_dataset("Myrtle/CAIMAN-ASR-BackgroundNoise", split="train")
+            try:
+                ds = load_dataset("Myrtle/CAIMAN-ASR-BackgroundNoise", split="train")
+            except Exception:
+                print("Corrupted download detected for CAIMAN dataset. Forcing redownload...")
+                ds = load_dataset("Myrtle/CAIMAN-ASR-BackgroundNoise", split="train", download_mode="force_redownload")
+            
             caiman_cache.mkdir(parents=True, exist_ok=True)
             
             for i, item in progress_bar(enumerate(ds), total=len(ds)):
@@ -237,22 +247,60 @@ def resolve_dataset(dataset):
     for d in datasets:
         d_str = str(d)
         if d_str == "google":
-            paths.append(untar_data("http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz"))
+            dest = data_base / "speech_commands"
+            fname = archive_base / "speech_commands"
+            try:
+                paths.append(untar_data("http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz", data=dest, archive=fname))
+            except Exception:
+                print("Corrupted download detected for google dataset. Redownloading...")
+                paths.append(untar_data("http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz", data=dest, archive=fname, force_download=True))
         elif d_str == "mswc":
+            parts = [str(i) for i in range(88)]
+            for p in parts:
+                dest = data_base / f"mswc_en_{p}"
+                fname = archive_base / f"mswc_en_{p}"
+                url = f"https://huggingface.co/datasets/MLCommons/ml_spoken_words/resolve/main/data/opus/en/train/audio/{p}.tar.gz"
+                try:
+                    paths.append(untar_data(url, archive=fname, data=dest))
+                except Exception:
+                    print(f"Corrupted download detected for mswc (part {p}). Redownloading...")
+                    paths.append(untar_data(url, archive=fname, data=dest, force_download=True))
+        elif d_str == "mswc-pl":
             parts = list("012345")
             for p in parts:
-                paths.append(untar_data(f"https://huggingface.co/datasets/MLCommons/ml_spoken_words/resolve/main/data/opus/pl/train/audio/{p}.tar.gz"))
+                dest = data_base / f"mswc_pl_{p}"
+                fname = archive_base / f"mswc_pl_{p}"
+                url = f"https://huggingface.co/datasets/MLCommons/ml_spoken_words/resolve/main/data/opus/pl/train/audio/{p}.tar.gz"
+                try:
+                    paths.append(untar_data(url, archive=fname, data=dest))
+                except Exception:
+                    print(f"Corrupted download detected for mswc-pl (part {p}). Redownloading...")
+                    paths.append(untar_data(url, archive=fname, data=dest, force_download=True))
         elif d_str.startswith("http"):
-            paths.append(untar_data(d_str))
+            filename = d_str.split('/')[-1]
+            folder_name = filename.split('.')[0]
+            
+            dest = data_base / folder_name
+            fname = archive_base / folder_name
+            try:
+                paths.append(untar_data(d_str, data=dest, archive=fname))
+            except Exception:
+                print(f"Corrupted download detected for URL {d_str}. Redownloading...")
+                paths.append(untar_data(d_str, data=dest, archive=fname, force_download=True))
         elif d_str.startswith("hf:"):
-            paths.append(Path(snapshot_download(repo_id=d_str[3:], repo_type="dataset")))
+            repo = d_str[3:]
+            try:
+                paths.append(Path(snapshot_download(repo_id=repo, repo_type="dataset")))
+            except Exception:
+                print(f"Corrupted download detected for HF repo {repo}. Forcing redownload...")
+                paths.append(Path(snapshot_download(repo_id=repo, repo_type="dataset", force_download=True)))
         else:
             paths.append(Path(d))
 
     def label_func(f):
         if 'CAIMAN-ASR' in str(f) or 'Myrtle' in str(f):
             return 'other'
-        if "mswc" in datasets and f.suffix == '.opus' and '_' in f.name:
+        if any("mswc" in str(d) for d in datasets) and f.suffix == '.opus' and '_' in f.name:
             return f.name.split('_')[0]
         return parent_label(f)
 
@@ -347,7 +395,22 @@ class Engine:
         builtin_config_path = Path(f"{builtin_base_path}_config.json")
         if user_model_path.exists() and user_config_path.exists():
             resolved_path = model_path
-        elif builtin_model_path.exists() and builtin_config_path.exists():
+            
+        elif not builtin_model_path.exists() or not builtin_config_path.exists():
+            try:
+                print(f"Downloading pre-trained '{model_path}' model (this may take a few seconds)...")
+                base_url = f"https://raw.githubusercontent.com/fkondela/KeywordTensor/main/keywordtensor/pretrained/{model_path}"
+                
+                urllib.request.urlretrieve(f"{base_url}.onnx", str(builtin_model_path))
+                urllib.request.urlretrieve(f"{base_url}_config.json", str(builtin_config_path))
+                print("Download complete!")
+            except (URLError, HTTPError):
+                print(f"Error: Model '{model_path}' not found locally or on the server.")
+                sys.exit(1)
+                
+            resolved_path = builtin_base_path
+            
+        else:
             resolved_path = builtin_base_path
         with open(f"{resolved_path}_config.json", "r", encoding="utf-8") as f:
             cfg = json.load(f)

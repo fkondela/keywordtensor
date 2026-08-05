@@ -1,0 +1,19 @@
+{
+    "labels": [
+        "backward",
+        "down",
+        "forward",
+        "go",
+        "left",
+        "other",
+        "no",
+        "right",
+        "stop",
+        "up",
+        "yes"
+    ],
+    "mean": -28.18632568946717,
+    "std": 21.04794729416429,
+    "duration": 1.0,
+    "sr": 16000
+}

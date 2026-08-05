@@ -1,0 +1,13 @@
+{
+    "labels": [
+        "back",
+        "mixed:other",
+        "next",
+        "play",
+        "stop"
+    ],
+    "mean": -32.90239626754276,
+    "std": 21.22856033747116,
+    "duration": 1.0,
+    "sr": 16000
+}

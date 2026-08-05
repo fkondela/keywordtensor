@@ -15,7 +15,7 @@ dependencies = [
     "torch",
     "torchaudio",
     "fastai",
-    "fastcore<=2.1.12",
+    "fastcore",
     "torch-audiomentations",
     "torchcodec",
     "onnx",
@@ -28,7 +28,6 @@ dependencies = [
 [tool.setuptools]
 packages = ["keywordtensor", "keywordtensor.pretrained"]
 
-[tool.setuptools.package-data]
-"keywordtensor.pretrained" = ["*.onnx", "*.json"]
+
 
 [tool.setuptools_scm]

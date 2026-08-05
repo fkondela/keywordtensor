@@ -1,0 +1,13 @@
+--index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://pypi.org/simple
+gradio
+numpy
+faker
+onnxruntime
+soundfile
+librosa
+audioop-lts
+huggingface_hub
+pydantic
+gTTS
+requests
