@@ -40,17 +40,17 @@ Don't have time to record your own dataset? You can use our ready-to-go models.
 - **`numbers`** (`zero`, `one`, `two`, `three`, `four`, `five`, `six`, `seven`, `eight`, `nine`, `other`)
 
 - **`media_control`** (`play`, `stop`, `next`, `back`, `other`)
-  - **Example — Media Player Control:**
+  - **Example — Media Player Control:** *(Mac/Linux: `python3`, Windows: `python`)*
     ```bash
     python3 -c "import urllib.request, subprocess, sys, os; os.makedirs('media_player_control', exist_ok=True); os.chdir('media_player_control'); urllib.request.urlretrieve('https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/media_player_control/media_player_control.py', 'app.py'); urllib.request.urlretrieve('https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/media_player_control/requirements.txt', 'req.txt'); subprocess.run([sys.executable, '-m', 'venv', '.venv']); p = r'.venv\Scripts\python.exe' if sys.platform=='win32' else '.venv/bin/python'; subprocess.run([p, '-m', 'pip', 'install', '-r', 'req.txt']); subprocess.run([p, 'app.py'])"
     ```
-  - **Example — Presentation Controller:**
+  - **Example — Presentation Controller:** *(Mac/Linux: `python3`, Windows: `python`)*
     ```bash
     python3 -c "import urllib.request, subprocess, sys, os; os.makedirs('presentation_controller', exist_ok=True); os.chdir('presentation_controller'); urllib.request.urlretrieve('https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/presentation_controller/presentation_controller.py', 'app.py'); urllib.request.urlretrieve('https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/presentation_controller/requirements.txt', 'req.txt'); subprocess.run([sys.executable, '-m', 'venv', '.venv']); p = r'.venv\Scripts\python.exe' if sys.platform=='win32' else '.venv/bin/python'; subprocess.run([p, '-m', 'pip', 'install', '-r', 'req.txt']); subprocess.run([p, 'app.py'])"
     ```
 
 - **`assistant`** (`marvin`, `sheila`, `other`)
-  - **Example — Desktop Assistant:**
+  - **Example — Desktop Assistant:** *(Mac/Linux: `python3`, Windows: `python`)*
     ```bash
     python3 -c "import urllib.request, subprocess, sys, os; os.makedirs('assistant', exist_ok=True); os.chdir('assistant'); urllib.request.urlretrieve('https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/assistant/assistant.py', 'app.py'); urllib.request.urlretrieve('https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/assistant/requirements.txt', 'req.txt'); subprocess.run([sys.executable, '-m', 'venv', '.venv']); p = r'.venv\Scripts\python.exe' if sys.platform=='win32' else '.venv/bin/python'; subprocess.run([p, '-m', 'pip', 'install', '-r', 'req.txt']); subprocess.run([p, 'app.py'])"
     ```
