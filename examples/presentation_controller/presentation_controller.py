@@ -33,8 +33,8 @@ try:
             "next": next_slide,
             "back": prev_slide
         },
-        min_confidence=0.7,
-        n_averages=1
+        min_confidence=0.8,
+        n_averages=3
     )
 except KeyboardInterrupt:
     print("\nStopped listening")

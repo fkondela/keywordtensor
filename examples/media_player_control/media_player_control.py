@@ -45,7 +45,7 @@ try:
             "next": next_track,
             "back": prev_track
         },
-        min_confidence=0.7,
+        min_confidence=0.8,
         n_averages=3
     )
 except KeyboardInterrupt:

@@ -55,11 +55,7 @@ Don't have time to record your own dataset? You can use our ready-to-go models.
     python3 -c "import urllib.request, subprocess, sys, os; os.makedirs('assistant', exist_ok=True); os.chdir('assistant'); urllib.request.urlretrieve('https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/assistant/assistant.py', 'app.py'); urllib.request.urlretrieve('https://raw.githubusercontent.com/fkondela/KeywordTensor/main/examples/assistant/requirements.txt', 'req.txt'); subprocess.run([sys.executable, '-m', 'venv', '.venv']); p = r'.venv\Scripts\python.exe' if sys.platform=='win32' else '.venv/bin/python'; subprocess.run([p, '-m', 'pip', 'install', '-r', 'req.txt']); subprocess.run([p, 'app.py'])"
     ```
 
-- **`smarthome_basic`** (`on`, `off`, `other`) - **SOON**
-
-- **`smarthome_rooms`** (`bedroom`, `kitchen`, `livingroom`, `bathroom`, `garage`, `other`) - **SOON**
-
-- **`smarthome_devices`** (`lights`, `television`, `heater`, `door`, `window`, `blinds`, `other`) - **SOON**
+- **`smarthome_control`** - **SOON**
 
 > **Acknowledgments:** Pre-trained models in this repository may utilize data from [MSWC](https://huggingface.co/datasets/MLCommons/ml_spoken_words) (CC-BY 4.0), [Google Speech Commands](https://research.google/blog/launching-the-speech-commands-dataset/) (CC-BY 4.0), and [CAIMAN-ASR-BackgroundNoise](https://huggingface.co/datasets/Myrtle/CAIMAN-ASR-BackgroundNoise) (CC-BY 4.0).
 
