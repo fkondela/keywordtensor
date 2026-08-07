@@ -139,8 +139,8 @@ You have total control over the pipeline. Available parameters in `.train()`:
 - `batch_size` *(default: 32)*: Number of audio samples processed simultaneously.
 - `valid_pct` *(default: 0.1)*: Percentage of data reserved for validation.
 - `learning_rate` *(Automatic)*: The engine dynamically searches for the optimal learning rate for your specific dataset and automatically applies the One-Cycle Policy. We do not expose manual LR tuning because the entire process is fully automated.
-- **Class Balancing** *(Automatic)*: The engine detects class imbalances in your training set and weights samples accordingly, so smaller classes are not drowned out by larger ones.
-- **Metrics** *(Automatic)*: In addition to accuracy, the engine tracks Precision, Recall, and F1 Score (macro) during training.
+- `Class Balancing` *(Automatic)*: The engine detects class imbalances in your training set and weights samples accordingly, so smaller classes are not drowned out by larger ones.
+- `Metrics` *(Automatic)*: In addition to accuracy, the engine tracks Precision, Recall, and F1 Score (macro) during training.
 - `wd` *(default: 0.01)*: Weight decay (L2 penalty) to prevent overfitting.
 - `eps` *(default: 0.05)*: Label smoothing epsilon to improve generalization.
 - `alpha` *(default: 0.0)*: MixUp augmentation parameter. The library already applies background audio augmentation during training, so enabling this is not recommended. Set to `0.0` to disable.
