@@ -179,7 +179,7 @@ def live_mode_quiz(state, live_flag):
         try:
             state["engine"].listen(
                 "tak_nie", actions={"tak": on_tak, "nie": on_nie, "other": on_other},
-                min_confidence=0.7, n_averages=1, listen_time=-1,
+                min_confidence=0.6, n_averages=1, listen_time=-1,
                 source=(state["sr"], state["buffer"]), threads=1, stop=lambda: not live_flag[0]
             )
         except: pass
@@ -326,7 +326,7 @@ def game_mode_quiz(state, live_flag):
             try:
                 state["engine"].listen(
                     "tak_nie", actions={"tak": on_tak, "nie": on_nie, "other": on_other}, 
-                    source=(state["sr"], state["buffer"]), min_confidence=0.7, n_averages=1, listen_time=10.0, threads=1, stop=lambda: not live_flag[0] or answer_detected[0] is not None
+                    source=(state["sr"], state["buffer"]), min_confidence=0.6, n_averages=1, listen_time=10.0, threads=1, stop=lambda: not live_flag[0] or answer_detected[0] is not None
                 )
             except: pass
         

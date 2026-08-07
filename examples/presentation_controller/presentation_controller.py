@@ -17,12 +17,12 @@ model = kt.Engine()
 def next_slide():
     print("Detected: 'next' -> Next slide")
     keyboard.tap(Key.right)
-    time.sleep(1.5)
+    time.sleep(1.0)
 
 def prev_slide():
     print("Detected: 'back' -> Previous slide")
     keyboard.tap(Key.left)
-    time.sleep(1.5)
+    time.sleep(1.0)
 
 print("Listening...")
 
@@ -33,8 +33,8 @@ try:
             "next": next_slide,
             "back": prev_slide
         },
-        min_confidence=0.8,
-        n_averages=3
+        min_confidence=0.6,
+        n_averages=2
     )
 except KeyboardInterrupt:
     print("\nStopped listening")

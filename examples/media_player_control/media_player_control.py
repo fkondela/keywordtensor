@@ -17,36 +17,36 @@ keyboard = Controller()
 def play_music():
     print("Detected: 'play' -> Play/Pause")
     keyboard.tap(Key.media_play_pause)
-    time.sleep(1.5)
+    time.sleep(1.0)
 
 def stop_music():
     print("Detected: 'stop' -> Play/Pause")
     keyboard.tap(Key.media_play_pause)
-    time.sleep(1.5)
+    time.sleep(1.0)
 
 def next_track():
     print("Detected: 'next' -> Next track")
     keyboard.tap(Key.media_next)
-    time.sleep(1.5)
+    time.sleep(1.0)
 
 def prev_track():
     print("Detected: 'back' -> Previous track")
     keyboard.tap(Key.media_previous)
-    time.sleep(1.5)
+    time.sleep(1.0)
 
 print("Listening...")
 
 try:
     model.listen(
         model_path="media_control",
-        actions={
+        actions={   
             "play": play_music,
             "stop": stop_music,
             "next": next_track,
             "back": prev_track
         },
-        min_confidence=0.8,
-        n_averages=3
+        min_confidence=0.6,
+        n_averages=2
     )
 except KeyboardInterrupt:
     print("\nStopped listening")

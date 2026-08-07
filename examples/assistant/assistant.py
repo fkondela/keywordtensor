@@ -15,7 +15,7 @@ model = kt.Engine()
 def open_gemini():
     print("Assistant activated -> Opening Gemini")
     webbrowser.open("https://gemini.google.com")
-    time.sleep(5)
+    time.sleep(2.0)
 
 print("Listening...")
 
@@ -26,8 +26,8 @@ try:
             "marvin": open_gemini,
             "sheila": open_gemini
         },
-        min_confidence=0.8,
-        n_averages=3
+        min_confidence=0.6,
+        n_averages=2
     )
 except KeyboardInterrupt:
     print("\nStopped listening")

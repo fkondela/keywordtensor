@@ -57,7 +57,7 @@ Don't have time to record your own dataset? You can use our ready-to-go models.
 
 - **`smarthome_control`** - **SOON**
 
-> **Acknowledgments:** Pre-trained models in this repository may utilize data from [MSWC](https://huggingface.co/datasets/MLCommons/ml_spoken_words) (CC-BY 4.0), [Google Speech Commands](https://research.google/blog/launching-the-speech-commands-dataset/) (CC-BY 4.0), and [CAIMAN-ASR-BackgroundNoise](https://huggingface.co/datasets/Myrtle/CAIMAN-ASR-BackgroundNoise) (CC-BY 4.0).
+> **Acknowledgments:** Pre-trained models in this repository may utilize data from [MSWC](https://huggingface.co/datasets/MLCommons/ml_spoken_words) (CC-BY 4.0), [Google Speech Commands](https://research.google/blog/launching-the-speech-commands-dataset/) (CC-BY 4.0), [CAIMAN-ASR-BackgroundNoise](https://huggingface.co/datasets/Myrtle/CAIMAN-ASR-BackgroundNoise) (CC-BY 4.0), and [OpenSLR RIR & Noises](https://www.openslr.org/28/) (CC-BY 4.0).
 
 ---
 
@@ -93,7 +93,7 @@ model.record(
 **Record parameters:**
 Available parameters in `.record()`:
 - `target` *(required)*: Path where the audio folders will be saved.
-- `classes` *(required)*: List of strings. Words you want to record.
+- `classes` *(required)*: List of strings (or a single string). Words you want to record.
 - `samples` *(default: 100)*: Number of audio samples to record per class.
 - `duration` *(default: 1.0)*: The exact duration of each audio clip in seconds.
 - `source` *(default: "microphone")*: Audio input source. 
@@ -116,16 +116,22 @@ model = keywordtensor.Engine()
 
 # The engine automatically applies audio & spectrogram augmentations during training
 model.train(
-    dataset="google",
-    classes=["up", "down", "mixed:other"],
+    dataset=["google", "caiman", "openrir"],
+    classes=["up", "down"],
+    bg_classes="background",
+    rir_classes="rir",
+    mixed=True,
     model_path="my_custom_model"
 )
 ```
 
 **Training parameters:**
 You have total control over the pipeline. Available parameters in `.train()`:
-- `dataset` *(required)*: Path to your audio dataset. You can provide a local folder path, a direct download link, a built-in dataset ([`"google"`](https://huggingface.co/datasets/speech_commands) (~2.3GB), [`"mswc"`](https://huggingface.co/datasets/MLCommons/ml_spoken_words) (~35GB), [`"mswc-pl"`](https://huggingface.co/datasets/MLCommons/ml_spoken_words) (~2GB)), or any Hugging Face dataset (`"hf:username/repo"`). **You can also provide a list** (e.g. `["my_folder", "mswc-pl"]`) to automatically merge multiple sources! *(Note: The `"google"`, `"mswc"`, and `"mswc-pl"` datasets don't contain native background noise. However, KeywordTensor automatically downloads a supplementary background dataset ([CAIMAN-ASR](https://huggingface.co/datasets/Myrtle/CAIMAN-ASR-BackgroundNoise)) alongside them. You can easily use it by requesting the `"other"` or `"mixed:other"` class!)*
-- `classes` *(default: all subfolders)*: List of specific words (folders) you want to recognize. If not provided, it trains on all available folders. **Pro-tip:** Add `"mixed:other"` to the list to let the engine automatically generate a robust "noise/unknown" class! It does this by smartly mixing 50% pure background noise with 50% random words from the other unselected classes in your dataset.
+- `dataset` *(required)*: Path to your audio dataset. You can provide a local folder path, a direct download link, a built-in dataset ([`"google"`](https://huggingface.co/datasets/speech_commands) (~2.3GB), [`"mswc"`](https://huggingface.co/datasets/MLCommons/ml_spoken_words) (~35GB), [`"mswc-pl"`](https://huggingface.co/datasets/MLCommons/ml_spoken_words) (~2GB), [`"caiman"`](https://huggingface.co/datasets/Myrtle/CAIMAN-ASR-BackgroundNoise) (~4GB), [`"openrir"`](https://www.openslr.org/28/) (~1GB)), or any Hugging Face dataset (`"hf:username/repo"`). **You can also provide a list** (e.g. `["google", "caiman", "openrir", "my_folder"]`) to automatically merge multiple sources!
+- `classes` *(required)*: List of strings (or a single string). Only the words you want the model to detect. Remaining folders in the dataset are handled automatically by `bg_classes` and `mixed`.
+- `bg_classes` *(required)*: List of classes (or a single string) to use as background noise for audio augmentation. For the built-in `"caiman"` dataset, pass `"background"`.
+- `rir_classes` *(default: None)*: List of classes (or a single string) to use as Room Impulse Responses for acoustic environment augmentation. For the built-in `"openrir"` dataset, pass `"rir"`.
+- `mixed` *(default: True)*: If `True`, the engine generates an `"other"` class made of 50% background noise and 50% random unused words from your dataset. If `False`, `"other"` contains only background noise files.
 - `model_path` *(default: 'myownmodel')*: Name of the final exported model.
 - `duration` *(default: 1.0)*: The exact duration of your audio clips in seconds. During training, the engine automatically performs random temporal cropping (for long files) and random zero-padding (for short files) to dramatically improve robustness against temporal shifts. Validation files are statically cropped to ensure consistent evaluation.
 - `sr` *(default: 16000)*: The target sample rate of the trained model. If your audio files have a different sample rate, the engine will automatically resample them under the hood.
@@ -133,15 +139,17 @@ You have total control over the pipeline. Available parameters in `.train()`:
 - `batch_size` *(default: 32)*: Number of audio samples processed simultaneously.
 - `valid_pct` *(default: 0.1)*: Percentage of data reserved for validation.
 - `learning_rate` *(Automatic)*: The engine dynamically searches for the optimal learning rate for your specific dataset and automatically applies the One-Cycle Policy. We do not expose manual LR tuning because the entire process is fully automated.
+- **Class Balancing** *(Automatic)*: The engine detects class imbalances in your training set and weights samples accordingly, so smaller classes are not drowned out by larger ones.
+- **Metrics** *(Automatic)*: In addition to accuracy, the engine tracks Precision, Recall, and F1 Score (macro) during training.
 - `wd` *(default: 0.01)*: Weight decay (L2 penalty) to prevent overfitting.
-- `eps` *(default: 0.01)*: Label smoothing epsilon to improve generalization.
-- `alpha` *(default: 0.1)*: MixUp augmentation parameter. Mixes audio samples during training to dramatically improve robustness against background noise and overfitting. A value of `0.1` works best for 1-second keywords. Set to `0.0` to disable.
+- `eps` *(default: 0.05)*: Label smoothing epsilon to improve generalization.
+- `alpha` *(default: 0.0)*: MixUp augmentation parameter. The library already applies background audio augmentation during training, so enabling this is not recommended. Set to `0.0` to disable.
 - `cbs` *(default: None)*: Optional list of fastai Callbacks to inject into the training loop (e.g., for logging to Weights & Biases or TensorBoard).
 
 ---
 
 ### 4. Live Inference & Custom Actions
-Once trained (or using a pre-trained model like `tak_nie`), you can run real-time inference using your microphone.
+Once trained (or using a pre-trained model like `media_control`), you can run real-time inference using your microphone.
 
 ```python
 import time
@@ -168,7 +176,7 @@ model.listen(
         "stop": on_stop
     },
     min_confidence=0.6,
-    n_averages=3
+    n_averages=2
 )
 ```
 
@@ -177,7 +185,7 @@ The `.listen()` method itself accepts the following runtime arguments:
 - `model_path` *(required)*: The name of the model to load. You can provide the path to your own trained model, or use the built-in `"tak_nie"` model which is highly robust to noise and pitched voices. 
 - `actions` *(default: prints detection and pauses)*: Optional dictionary mapping detected keywords to your own Python callbacks. If not provided, the engine simply prints the detected word and waits for the sample duration to avoid spam. If you provide callbacks, they execute immediately upon detection, and you must implement any required "cooldown" inside your function (the listen core will pause while your function runs).
 - `min_confidence` *(default: 0.6)*: The probability threshold (0.0 to 1.0) required to trigger the action.
-- `n_averages` *(default: 3)*: Temporal smoothing. Averages the last *N* predictions to prevent false positive clicks.
+- `n_averages` *(default: 2)*: Temporal smoothing. Averages the last *N* predictions to prevent false positive clicks.
 - `listen_time` *(default: -1)*: How long to listen in seconds. `-1` means listen forever, `0` performs a single prediction, and `>0` sets a specific duration.
 - `stop` *(default: None)*: Optional callback function that returns `True` to stop the listening loop.
 - `source` *(default: "microphone")*: Audio input source. 

@@ -1,5 +1,4 @@
 
-#wszystkie importy
 import json
 import urllib.request
 from urllib.error import URLError, HTTPError
@@ -37,11 +36,25 @@ try:
     import itertools
     if not hasattr(L, 'starmap'):
         L.starmap = lambda self, f: L(itertools.starmap(f, self))
-    from torch_audiomentations import Compose, Shift, Gain, PolarityInversion, AddColoredNoise, PitchShift, HighPassFilter, LowPassFilter
+    from torch_audiomentations import *
     from huggingface_hub import snapshot_download
     from fastai.data.external import fastai_path
     from datasets import load_dataset
+    from fastai.metrics import accuracy, Precision, Recall, F1Score
+    from fastai.callback.data import WeightedDL
+    from collections import Counter
     IS_EDGE_VERSION = False
+    
+    if not hasattr(torchaudio, 'info'):
+        class _FakeAudioMetaData:
+            def __init__(self, sample_rate, num_frames):
+                self.sample_rate = sample_rate
+                self.num_frames = num_frames
+        def _fast_info(filepath):
+            info = sf.info(str(filepath))
+            return _FakeAudioMetaData(info.samplerate, info.frames)
+        torchaudio.info = _fast_info
+
 except ImportError:
     IS_EDGE_VERSION = True
     class Transform:
@@ -57,7 +70,6 @@ except ImportError:
 
 
 
-#zamiana pliku na falę dźwiękową
 class LoadAudio(Transform):
     def __init__(self, sr=16000):
         self.sr = sr
@@ -68,9 +80,10 @@ class LoadAudio(Transform):
             waveform = librosa.resample(waveform, orig_sr=sr, target_sr=self.sr)
         return torch.tensor(waveform, dtype=torch.float32).unsqueeze(0)
 
+
 class CropAudioTrain(Transform):
     split_idx = 0
-    def __init__(self, duration=3.0, sr=16000):
+    def __init__(self, duration=1.0, sr=16000):
         self.target_len = int(duration * sr)
 
     def encodes(self, waveform):
@@ -85,9 +98,10 @@ class CropAudioTrain(Transform):
             waveform = torch.nn.functional.pad(waveform, (pad_left, pad_right))
         return waveform
 
+
 class CropAudioValid(Transform):
     split_idx = 1
-    def __init__(self, duration=3.0, sr=16000):
+    def __init__(self, duration=1.0, sr=16000):
         self.target_len = int(duration * sr)
 
     def encodes(self, waveform):
@@ -99,12 +113,12 @@ class CropAudioValid(Transform):
             waveform = torch.nn.functional.pad(waveform, (0, pad_amount))
         return waveform
 
-#definicja wyświetlenia spektrogramu
+
 class AudioSpectrogram(TensorImage):
     def show(self, ctx=None, **kwargs):
         return show_image(self, ctx=ctx, cmap='magma', **kwargs)
 
-#definicja zamiany fali dźwiękowej na spektrogram
+
 class WaveformToSpectrogram(Transform):
     def __init__(self, sr=16000):
         self.sr = sr
@@ -112,30 +126,38 @@ class WaveformToSpectrogram(Transform):
     def encodes(self, waveform):
         is_tensor = hasattr(waveform, 'numpy') 
         audio_np = waveform.squeeze().numpy() if is_tensor else waveform
-        
         mel = librosa.feature.melspectrogram(y=audio_np, sr=self.sr, n_fft=1024, hop_length=128, win_length=1024, n_mels=128, power=2.0, htk=True, center=True, pad_mode='reflect', norm=None)
         spec_db = librosa.power_to_db(mel, ref=1.0, top_db=80.0, amin=1e-10)
-        
         if is_tensor:
             return AudioSpectrogram(torch.tensor(spec_db, dtype=torch.float32).unsqueeze(0))
         return np.expand_dims(spec_db, axis=(0, 1)).astype(np.float32)
         
-#definicja augmentacji audio
+
 class AudioAugment(Transform):
     split_idx = 0 
-    
-    def __init__(self, sr=16000):
+    def __init__(self, sr=16000, bg_paths=None, rir_paths=None):
         self.sr = sr
         
-        self.audio_augcompose = Compose([
+        tfms = [
             Shift(min_shift=-0.1, max_shift=0.1, sample_rate=self.sr, p=0.4, rollover=False, output_type="dict"),
-            Gain(min_gain_in_db=-15.0, max_gain_in_db=15.0, p=0.6, output_type="dict"),
-            PolarityInversion(p=0.5, output_type="dict"),
-            AddColoredNoise(min_snr_in_db=20.0, max_snr_in_db=35.0, p=0.6, output_type="dict"),
-            PitchShift(min_transpose_semitones=-8, max_transpose_semitones=8, sample_rate=self.sr, p=0.6, output_type="dict"),
-            HighPassFilter(min_cutoff_freq=50, max_cutoff_freq=300, sample_rate=self.sr, p=0.3, output_type="dict"),
-            LowPassFilter(min_cutoff_freq=5000, max_cutoff_freq=7000, sample_rate=self.sr, p=0.3, output_type="dict"),
-        ], output_type="dict")
+            PitchShift(min_transpose_semitones=-4, max_transpose_semitones=4, sample_rate=self.sr, p=0.5, output_type="dict"),
+        ]
+        
+        if bg_paths:
+            tfms.append(AddBackgroundNoise(background_paths=bg_paths, min_snr_in_db=10.0, max_snr_in_db=20.0, p=0.6, output_type="dict"))
+        if rir_paths:
+            tfms.append(ApplyImpulseResponse(ir_paths=rir_paths, p=0.3, compensate_for_propagation_delay=True, output_type="dict"))
+        
+        tfms.extend([
+            LowPassFilter(min_cutoff_freq=5000, max_cutoff_freq=7000, sample_rate=self.sr, p=0.2, output_type="dict"),
+            HighPassFilter(min_cutoff_freq=100, max_cutoff_freq=300, sample_rate=self.sr, p=0.2, output_type="dict"),
+            BandStopFilter(min_center_frequency=600, max_center_frequency=3500, min_bandwidth_fraction=0.02, max_bandwidth_fraction=0.1, sample_rate=self.sr, p=0.1, output_type="dict"),
+            AddColoredNoise(min_snr_in_db=15.0, max_snr_in_db=30.0, p=0.2, output_type="dict"),
+            PeakNormalization(apply_to="all", p=1.0, output_type="dict"),
+            Gain(min_gain_in_db=-15.0, max_gain_in_db=0.0, p=0.6, output_type="dict")
+        ])
+        
+        self.audio_augcompose = Compose(tfms, output_type="dict")
 
     def encodes(self, waveform):
         audio_input = waveform.unsqueeze(0)
@@ -143,17 +165,19 @@ class AudioAugment(Transform):
         audio_output = augment_dict.samples
         return audio_output.squeeze(0)
     
-#defdinicja augmentacji spektrogramu
+
 class SpecAugment(Transform):
     split_idx = 0
     def __init__(self):
-        self.tmask = T.TimeMasking(time_mask_param=4)
-        self.fmask = T.FrequencyMasking(freq_mask_param=4)
+        self.tmask1 = T.TimeMasking(time_mask_param=2)
+        self.tmask2 = T.TimeMasking(time_mask_param=2)
+        self.fmask1 = T.FrequencyMasking(freq_mask_param=2)
+        self.fmask2 = T.FrequencyMasking(freq_mask_param=2)
         
     def encodes(self, spec: AudioSpectrogram):
-        return self.fmask(self.tmask(spec))
+        return self.fmask2(self.fmask1(self.tmask2(self.tmask1(spec))))
 
-#definicja normalizacji spektrogramu
+
 class NormalizeSpec(Transform):
     def __init__(self, mean=0.0, std=1.0):
         self.mean = mean
@@ -185,127 +209,162 @@ class NormalizeSpec(Transform):
 
 
 
-#przygotowanie plikow do treningu i tworzenie klasy other gdy nazwa zawiera "mixed:"
-def prepare_files(files_paths, classes, label_func):
-    paths = [files_paths] if isinstance(files_paths, (str, Path)) else files_paths
-    by_cls = defaultdict(list)
-    
-    for f in (file for p in paths for file in get_files(Path(p), extensions=['.wav', '.opus'])):
-        by_cls[label_func(f)].append(f)
-        
-    if not classes: 
-        return L((f, l) for l, fs in by_cls.items() for f in fs), list(by_cls.keys())
-    
-    bases = [c.replace("mixed:", "") for c in classes]
-    for b in bases: 
-        assert by_cls[b], f"Error: 0 files for class '{b}'"
-    
-    normal_classes = [c for c in classes if "mixed:" not in c]
-    tgt_n = len(by_cls[normal_classes[0]]) if normal_classes else 0
-    
-    others = [f for k, v in by_cls.items() if k not in bases for f in v]
-    out = L()
-    
-    for c, b in zip(classes, bases):
-        noise = by_cls[b]
-        if c == b: 
-            out.extend([(f, c) for f in noise])
-        else:
-            pool = (random.choices(noise, k=tgt_n//2) + random.choices(others, k=tgt_n - tgt_n//2)) if (noise and others) else random.choices(noise or others, k=tgt_n)
-            out.extend([(f, c) for f in pool])
-            
-    return out, classes
+def prepare_files(dataset_paths, label_func, classes, bg_classes=None, rir_classes=None, mixed=True):
+    bg_cls = [bg_classes] if isinstance(bg_classes, str) else (bg_classes or [])
+    rir_cls = [rir_classes] if isinstance(rir_classes, str) else (rir_classes or [])
 
-#pobieranie danych z: google, mswc, linku, hf, lub folderu
+    all_files = [f for p in dataset_paths for f in get_files(Path(p), extensions=['.wav', '.opus'])]
+
+    by_label = defaultdict(list)
+    for f in all_files:
+        by_label[label_func(f)].append(f)
+
+    bg_files = []
+    for c in bg_cls: bg_files.extend(by_label.get(c, []))
+        
+    rir_files = []
+    for c in rir_cls: rir_files.extend(by_label.get(c, []))
+
+    bg_paths = list({str(f.parent.resolve()) for f in bg_files})
+    rir_paths = list({str(f.parent.resolve()) for f in rir_files})
+
+    if bg_cls: assert bg_paths, f"Error: No background files found for classes {bg_cls}"
+    if rir_cls and not rir_paths: print(f"Warning: No RIR files found for classes {rir_cls}")
+
+    classes_out = []
+    for c in classes:
+        for f in by_label.get(c, []):
+            classes_out.append((f, c))
+            
+    for c in classes: assert any(cls == c for _, cls in classes_out), f"Error: 0 files found for target class '{c}'"
+
+    ignored_labels = set(classes + bg_cls + rir_cls)
+    other_out = []
+    for lbl, files in by_label.items():
+        if lbl not in ignored_labels:
+            for f in files:
+                other_out.append((f, lbl))
+
+    out = L(classes_out)
+
+    if bg_cls:
+        tgt_n = len(by_label.get(classes[0], [])) if classes else 0
+        
+        if mixed:
+            others = [f for f, _ in other_out]
+            pool = (random.choices(others, k=tgt_n//2) + random.choices(bg_files, k=tgt_n - tgt_n//2)) if others else random.choices(bg_files, k=tgt_n)
+        else:
+            pool = random.choices(bg_files, k=tgt_n) if bg_files else []
+
+        out.extend([(f, "other") for f in pool])
+        
+    print("Preparation summary:")
+    unique_classes = list(set([c for _, c in out]))
+    for c in sorted(unique_classes):
+        class_count = len([f for f, cls in out if cls == c])
+        print(f"Class '{c}': {class_count} files")
+        
+    print(f"Background files available for aug: {len(bg_files)}")
+    print(f"RIR files available for aug: {len(rir_files)}")
+    
+    return out, bg_paths, rir_paths
+
+
 def resolve_dataset(dataset):
     paths = []
-    
     archive_base = Path("~/.fastai/archive").expanduser()
     data_base = Path("~/.fastai/data").expanduser()
     
     datasets = [dataset] if isinstance(dataset, (str, Path)) else dataset
     
-    if any(x in datasets for x in ["google", "mswc", "mswc-pl"]):
-        caiman_cache = data_base / "CAIMAN-ASR"
-        
-        if not caiman_cache.exists() or len(list(caiman_cache.glob("*.wav"))) < 1000:
-            try:
-                ds = load_dataset("Myrtle/CAIMAN-ASR-BackgroundNoise", split="train")
-            except Exception:
-                print("Corrupted download detected for CAIMAN dataset. Forcing redownload...")
-                ds = load_dataset("Myrtle/CAIMAN-ASR-BackgroundNoise", split="train", download_mode="force_redownload")
-            
-            caiman_cache.mkdir(parents=True, exist_ok=True)
-            
-            for i, item in progress_bar(enumerate(ds), total=len(ds)):
-                audio_data = item["audio"]
-                save_path = caiman_cache / f"noise_{i}.wav"
-                sf.write(str(save_path), audio_data["array"], audio_data["sampling_rate"])
-                
-        paths.append(caiman_cache)
-
     for d in datasets:
         d_str = str(d)
         if d_str == "google":
             dest = data_base / "speech_commands"
             fname = archive_base / "speech_commands"
-            try:
-                paths.append(untar_data("http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz", data=dest, archive=fname))
-            except Exception:
-                print("Corrupted download detected for google dataset. Redownloading...")
+            print("Downloading Google Speech Commands dataset...")
+            try: paths.append(untar_data("http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz", data=dest, archive=fname))
+            except Exception: 
+                print("Corrupted download detected for google. Forcing redownload...")
                 paths.append(untar_data("http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz", data=dest, archive=fname, force_download=True))
+            print("Google Speech Commands dataset completed.")
+        elif d_str == "caiman":
+            caiman_cache = data_base / "CAIMAN-ASR"
+            print("Downloading CAIMAN-ASR dataset...")
+            if not caiman_cache.exists() or len(list(caiman_cache.glob("*.wav"))) < 1000:
+                try: ds = load_dataset("Myrtle/CAIMAN-ASR-BackgroundNoise", split="train")
+                except Exception: 
+                    print("Corrupted download detected for caiman. Forcing redownload...")
+                    ds = load_dataset("Myrtle/CAIMAN-ASR-BackgroundNoise", split="train", download_mode="force_redownload")
+                caiman_cache.mkdir(parents=True, exist_ok=True)
+                for i, item in progress_bar(enumerate(ds), total=len(ds)):
+                    audio_data = item["audio"]
+                    save_path = caiman_cache / f"noise_{i}.wav"
+                    sf.write(str(save_path), audio_data["array"], audio_data["sampling_rate"])
+            print("CAIMAN-ASR dataset completed.")
+            paths.append(caiman_cache)
+        elif d_str == "openrir":
+            dest = data_base / "openslr-rir"
+            fname = archive_base / "rir_noises"
+            print("Downloading OpenSLR RIR dataset...")
+            try: paths.append(untar_data("http://www.openslr.org/resources/28/rirs_noises.zip", data=dest, archive=fname))
+            except Exception: 
+                print("Corrupted download detected for openrir. Forcing redownload...")
+                paths.append(untar_data("http://www.openslr.org/resources/28/rirs_noises.zip", data=dest, archive=fname, force_download=True))
+            print("OpenSLR RIR dataset completed.")
         elif d_str == "mswc":
             parts = [str(i) for i in range(88)]
+            print("Downloading MSWC English (88 parts)...")
             for p in parts:
                 dest = data_base / f"mswc_en_{p}"
                 fname = archive_base / f"mswc_en_{p}"
                 url = f"https://huggingface.co/datasets/MLCommons/ml_spoken_words/resolve/main/data/opus/en/train/audio/{p}.tar.gz"
-                try:
-                    paths.append(untar_data(url, archive=fname, data=dest))
-                except Exception:
-                    print(f"Corrupted download detected for mswc (part {p}). Redownloading...")
+                try: paths.append(untar_data(url, archive=fname, data=dest))
+                except Exception: 
+                    print(f"Corrupted download detected for mswc part {p}. Forcing redownload...")
                     paths.append(untar_data(url, archive=fname, data=dest, force_download=True))
+            print("MSWC English dataset completed.")
         elif d_str == "mswc-pl":
             parts = list("012345")
+            print("Downloading MSWC Polish (6 parts)...")
             for p in parts:
                 dest = data_base / f"mswc_pl_{p}"
                 fname = archive_base / f"mswc_pl_{p}"
                 url = f"https://huggingface.co/datasets/MLCommons/ml_spoken_words/resolve/main/data/opus/pl/train/audio/{p}.tar.gz"
-                try:
-                    paths.append(untar_data(url, archive=fname, data=dest))
-                except Exception:
-                    print(f"Corrupted download detected for mswc-pl (part {p}). Redownloading...")
+                try: paths.append(untar_data(url, archive=fname, data=dest))
+                except Exception: 
+                    print(f"Corrupted download detected for mswc-pl part {p}. Forcing redownload...")
                     paths.append(untar_data(url, archive=fname, data=dest, force_download=True))
+            print("MSWC Polish dataset completed.")
         elif d_str.startswith("http"):
             filename = d_str.split('/')[-1]
-            folder_name = filename.split('.')[0]
-            
-            dest = data_base / folder_name
-            fname = archive_base / folder_name
-            try:
-                paths.append(untar_data(d_str, data=dest, archive=fname))
-            except Exception:
-                print(f"Corrupted download detected for URL {d_str}. Redownloading...")
+            dest = data_base / filename.split('.')[0]
+            fname = archive_base / filename.split('.')[0]
+            print(f"Downloading custom dataset: {filename}...")
+            try: paths.append(untar_data(d_str, data=dest, archive=fname))
+            except Exception: 
+                print(f"Corrupted download detected for {filename}. Forcing redownload...")
                 paths.append(untar_data(d_str, data=dest, archive=fname, force_download=True))
+            print(f"Custom dataset {filename} completed.")
         elif d_str.startswith("hf:"):
             repo = d_str[3:]
-            try:
-                paths.append(Path(snapshot_download(repo_id=repo, repo_type="dataset")))
-            except Exception:
+            print(f"Downloading HuggingFace dataset: {repo}...")
+            try: paths.append(Path(snapshot_download(repo_id=repo, repo_type="dataset")))
+            except Exception: 
                 print(f"Corrupted download detected for HF repo {repo}. Forcing redownload...")
                 paths.append(Path(snapshot_download(repo_id=repo, repo_type="dataset", force_download=True)))
+            print(f"HuggingFace dataset {repo} completed.")
         else:
             paths.append(Path(d))
 
     def label_func(f):
-        if 'CAIMAN-ASR' in str(f) or 'Myrtle' in str(f):
-            return 'other'
-        if any("mswc" in str(d) for d in datasets) and f.suffix == '.opus' and '_' in f.name:
-            return f.name.split('_')[0]
+        if 'CAIMAN-ASR' in str(f) or 'Myrtle' in str(f): return 'background'
+        if '_background_noise_' in f.parent.name: return 'background'
+        if 'openslr' in str(f).lower() or 'rirs_noises' in str(f).lower(): return 'rir'
+        if any("mswc" in str(d) for d in datasets) and f.suffix == '.opus' and '_' in f.name: return f.name.split('_')[0]
         return parent_label(f)
 
     return paths, label_func
-
 
 
 
@@ -316,23 +375,47 @@ class Engine:
     def __init__(self):
         self.model_name = None
 
-    def train(self, dataset, classes: list = None, epochs=10, batch_size=32, wd=0.01, eps=0.01, valid_pct=0.1, model_path='myownmodel', duration=1.0, sr=16000, alpha=0.1, cbs=None):
+    def train(self, dataset, classes: list = None, epochs=10, batch_size=32, wd=0.01, eps=0.05, valid_pct=0.1, model_path='myownmodel', duration=1.0, sr=16000, alpha=0.0, bg_classes=None, rir_classes=None, mixed=True, cbs=None):
         if IS_EDGE_VERSION:
             raise RuntimeError("This is the Edge version. To train, install: pip install keywordtensor[train]")
 
-        dataset_path, label_func = resolve_dataset(dataset)
-        items, classes = prepare_files(dataset_path, classes, label_func)
+        if classes is not None and isinstance(classes, str):
+            classes = [classes]
+
+        assert classes is not None, "Error: 'classes' parameter is required."
+        assert bg_classes is not None, "Error: 'bg_classes' parameter is required."
+
+        model_dir = Path(model_path).parent
+        if str(model_dir) != "." and not model_dir.exists():
+            print(f"Error: Directory '{model_dir}' does not exist.")
+            assert False, f"Please create the directory '{model_dir}' before training."
+            
+        if Path(f"{model_path}.onnx").exists() or Path(f"{model_path}_config.json").exists():
+            print(f"Error: Model '{model_path}' already exists.")
+            assert False, "Please choose a different model_path or delete existing files to prevent overwriting."
+
+        dataset_paths, label_func = resolve_dataset(dataset)
+        items, bg_paths, rir_paths = prepare_files(
+            dataset_paths, label_func, classes,
+            bg_classes=bg_classes, rir_classes=rir_classes, mixed=mixed
+        )
         self.model_name = model_path
         
         splits = RandomSplitter(valid_pct=valid_pct, seed=42)(items)
         norm_spec = NormalizeSpec()
         
         tfms = [
-                [ItemGetter(0), LoadAudio(sr=sr), CropAudioTrain(duration=duration, sr=sr), CropAudioValid(duration=duration, sr=sr), AudioAugment(sr=sr), WaveformToSpectrogram(sr=sr), norm_spec, SpecAugment()],
+                [ItemGetter(0), LoadAudio(sr=sr), CropAudioTrain(duration=duration, sr=sr), CropAudioValid(duration=duration, sr=sr), AudioAugment(sr=sr, bg_paths=bg_paths, rir_paths=rir_paths or None), WaveformToSpectrogram(sr=sr), norm_spec, SpecAugment()],
                 [ItemGetter(1), Categorize()]
                 ]
         dsets = Datasets(items, tfms, splits=splits)
-        dls = dsets.dataloaders(bs=batch_size)
+
+        train_labels = [items[i][1] for i in splits[0]]
+        class_counts = Counter(train_labels)
+        raw_weights = [1.0 / class_counts[label] for label in train_labels]
+        suma_wag = sum(raw_weights)
+        weights = [w / suma_wag for w in raw_weights]
+        dls = dsets.dataloaders(bs=batch_size, dl_type=WeightedDL, wgts=weights)
 
         model = xresnet18(c_in=1, n_out=len(dls.vocab), pretrained=False)
         if torch.cuda.device_count() > 1:
@@ -343,7 +426,8 @@ class Engine:
         user_cbs = cbs if cbs is not None else []
         all_cbs = base_cbs + user_cbs
 
-        learn = Learner(dls, model, wd=wd, metrics=accuracy, loss_func=LabelSmoothingCrossEntropy(eps=eps), cbs=all_cbs)
+        metrics = [accuracy, Precision(average='macro'), Recall(average='macro'), F1Score(average='macro')]
+        learn = Learner(dls, model, wd=wd, metrics=metrics, loss_func=LabelSmoothingCrossEntropy(eps=eps), cbs=all_cbs)
         
         res = learn.lr_find(show_plot=False)
         base_lr = res.valley
@@ -384,9 +468,8 @@ class Engine:
 
 
 
-    def listen(self, model_path, actions=None, min_confidence=0.6, n_averages=3, source="microphone", listen_time=-1, threads: int = None, stop=None):
+    def listen(self, model_path, actions=None, min_confidence=0.6, n_averages=2, source="microphone", listen_time=-1, threads: int = None, stop=None):
 
-        #wczytanie pliku config oraz modelu
         user_model_path = Path(f"{model_path}.onnx")
         user_config_path = Path(f"{model_path}_config.json")
         library_dir = os.path.dirname(os.path.abspath(__file__))
@@ -420,7 +503,6 @@ class Engine:
         mean = cfg["mean"]
         std = cfg["std"]
 
-        #ilosć watkow do wykorzystania przez model
         if threads is not None:
             sess_options = ort.SessionOptions()
             sess_options.intra_op_num_threads = threads
@@ -430,7 +512,6 @@ class Engine:
             sess = ort.InferenceSession(f"{resolved_path}.onnx")
         inp_name = sess.get_inputs()[0].name
 
-        #wybor numeru mikrofonu
         device_id = None
         if isinstance(source, str) and source.startswith("microphone:"):
             try:
@@ -438,7 +519,6 @@ class Engine:
             except ValueError:
                 pass
 
-        #tworzenie buforu audio z mikrofonu lub zmiennej uzytkownika
         length_in_samples = int(sr * duration)
         bufor_audio = deque([0.0] * length_in_samples, maxlen=length_in_samples)
         stream = None
@@ -450,7 +530,6 @@ class Engine:
         else:
             bufor_audio = source
 
-        #predykcja z podanego bufora audio z uwzglednieniem resamplingu
         wav_to_spec = WaveformToSpectrogram(sr=sr)
         normalize_spec = NormalizeSpec(mean=mean, std=std)
         def predict(bufor_audio):
@@ -470,7 +549,6 @@ class Engine:
             probs = exp_res / exp_res.sum()
             return {label: float(prob) for label, prob in zip(labels, probs)}
 
-        #obsluga predykcji i wywolanie akcji
         prediction_history = deque(maxlen=n_averages)
         def process_actions(probs):
             if not probs:
@@ -493,7 +571,6 @@ class Engine:
                     actions[best_word]()
                     prediction_history.clear()
 
-        #petla do obslugi nasluchu
         start_time = time.time()
         time.sleep(duration)
         try:
@@ -523,6 +600,9 @@ class Engine:
 
 
     def record(self, target, classes: list, samples: int = 100, actions: dict = None, source="microphone", duration:float = 1.0, sr=16000, stop=None):
+        if classes is not None and isinstance(classes, str):
+            classes = [classes]
+            
         length_in_samples = int(sr * duration)
 
         device_id = None
