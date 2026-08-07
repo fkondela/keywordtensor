@@ -1,6 +1,6 @@
 <div align="center">
-  <img alt="KeywordTensor Logo" src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo_light.svg?v=2#gh-light-mode-only" width="700">
-  <img alt="KeywordTensor Logo" src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo_dark.svg?v=2#gh-dark-mode-only" width="700">
+  <img alt="KeywordTensor Logo" src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo_light.svg#gh-light-mode-only" width="700">
+  <img alt="KeywordTensor Logo" src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo_dark.svg#gh-dark-mode-only" width="700">
 </div>
 
 ---
@@ -34,13 +34,13 @@ KeywordTensor is built for developers who want to integrate voice commands into 
 Don't have time to record your own dataset? You can use our ready-to-go models.
 
 - **`tak_nie`** (`tak`, `nie`, `other`)
-  - **Example — Quiz:** <a href="https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net"><img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.svg?v=2" height="28" align="absmiddle" alt="KeywordTensor Logo"><img src="https://img.shields.io/badge/Live_Demo-0089D6?style=for-the-badge" align="absmiddle" alt="Live Demo"></a>
+  - **Example — Quiz:** <a href="https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net"><img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.svg" height="28" align="absmiddle" alt="KeywordTensor Logo"><img src="https://img.shields.io/badge/Live_Demo-0089D6?style=for-the-badge" align="absmiddle" alt="Live Demo"></a>
     
     [SOON] A highly robust model trained specifically to handle high-pitched children's voices and extremely noisy environments. Designed for live public demonstration - *"Noc Naukowców"* (Researchers' Night) event.
 
 - **`spatial_nav`** (`backward`, `down`, `forward`, `go`, `left`, `no`, `right`, `stop`, `up`, `yes`, `other`)
-  - **Example — Sokoban:** <a href="https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net"><img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.svg?v=2" height="28" align="absmiddle" alt="KeywordTensor Logo"><img src="https://img.shields.io/badge/Live_Demo-0089D6?style=for-the-badge" align="absmiddle" alt="Live Demo"></a>
-  - **Example — 2048:** <a href="https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net"><img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.svg?v=2" height="28" align="absmiddle" alt="KeywordTensor Logo"><img src="https://img.shields.io/badge/Live_Demo-0089D6?style=for-the-badge" align="absmiddle" alt="Live Demo"></a>
+  - **Example — Sokoban:** <a href="https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net"><img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.svg" height="28" align="absmiddle" alt="KeywordTensor Logo"><img src="https://img.shields.io/badge/Live_Demo-0089D6?style=for-the-badge" align="absmiddle" alt="Live Demo"></a>
+  - **Example — 2048:** <a href="https://keywordtensor-hqang5gnfte7hrhn.polandcentral-01.azurewebsites.net"><img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.svg" height="28" align="absmiddle" alt="KeywordTensor Logo"><img src="https://img.shields.io/badge/Live_Demo-0089D6?style=for-the-badge" align="absmiddle" alt="Live Demo"></a>
 
 - **`numbers`** (`zero`, `one`, `two`, `three`, `four`, `five`, `six`, `seven`, `eight`, `nine`, `other`)
 
