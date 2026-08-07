@@ -378,7 +378,7 @@ def game_mode_quiz(state, live_flag):
 with gr.Blocks(title="KeywordTensor") as demo:
     gr.HTML('''
     <div class="header-container">
-        <img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.png?v=999" alt="KeywordTensor Logo">
+        <img src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo.svg" alt="KeywordTensor Logo">
         <h1>KeywordTensor</h1>
     </div>
     ''')
@@ -524,7 +524,7 @@ with gr.Blocks(title="KeywordTensor") as demo:
 if __name__ == "__main__":
     base = os.path.dirname(__file__)
 
-    favicon_path = os.path.join(base if os.path.exists(os.path.join(base, "assets")) else os.path.dirname(base), "assets", "logo.png")
+    favicon_path = os.path.join(base if os.path.exists(os.path.join(base, "assets")) else os.path.dirname(base), "assets", "logo.svg")
     demo.launch(
         server_name="0.0.0.0", server_port=8000, theme=gr.themes.Soft(primary_hue="blue"), css=custom_css, favicon_path=favicon_path
     )
