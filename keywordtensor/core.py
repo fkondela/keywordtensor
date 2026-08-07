@@ -43,6 +43,7 @@ try:
     from fastai.metrics import accuracy, Precision, Recall, F1Score
     from fastai.callback.data import WeightedDL
     from collections import Counter
+    import math
     IS_EDGE_VERSION = False
     
     if not hasattr(torchaudio, 'info'):
@@ -412,7 +413,7 @@ class Engine:
 
         train_labels = [items[i][1] for i in splits[0]]
         class_counts = Counter(train_labels)
-        raw_weights = [1.0 / class_counts[label] for label in train_labels]
+        raw_weights = [1.0 / math.sqrt(class_counts[label]) for label in train_labels]
         suma_wag = sum(raw_weights)
         weights = [w / suma_wag for w in raw_weights]
         dls = dsets.dataloaders(bs=batch_size, dl_type=WeightedDL, wgts=weights)
