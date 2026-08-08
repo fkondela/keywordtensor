@@ -1,6 +1,9 @@
 <div align="center">
-  <img alt="KeywordTensor Logo" src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo_light.svg#gh-light-mode-only" width="700">
-  <img alt="KeywordTensor Logo" src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo_dark.svg#gh-dark-mode-only" width="700">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo_dark.svg?v=3">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo_light.svg?v=3">
+    <img alt="KeywordTensor Logo" src="https://raw.githubusercontent.com/fkondela/keywordtensor/main/assets/logo_light.svg?v=3" width="700">
+  </picture>
 </div>
 
 ---
