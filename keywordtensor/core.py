@@ -155,7 +155,7 @@ class AudioAugment(Transform):
             BandStopFilter(min_center_frequency=600, max_center_frequency=3500, min_bandwidth_fraction=0.02, max_bandwidth_fraction=0.1, sample_rate=self.sr, p=0.1, output_type="dict"),
             AddColoredNoise(min_snr_in_db=15.0, max_snr_in_db=30.0, p=0.2, output_type="dict"),
             PeakNormalization(apply_to="all", p=1.0, output_type="dict"),
-            Gain(min_gain_in_db=-15.0, max_gain_in_db=0.0, p=0.6, output_type="dict")
+            Gain(min_gain_in_db=-25.0, max_gain_in_db=0.0, p=0.6, output_type="dict")
         ])
         
         self.audio_augcompose = Compose(tfms, output_type="dict")
@@ -249,7 +249,7 @@ def prepare_files(dataset_paths, label_func, classes, bg_classes=None, rir_class
     out = L(classes_out)
 
     if bg_cls:
-        tgt_n = len(by_label.get(classes[0], [])) if classes else 0
+        tgt_n = sum(len(by_label.get(c, [])) for c in classes) // len(classes) if classes else 0
         
         if mixed:
             others = [f for f, _ in other_out]
@@ -411,12 +411,13 @@ class Engine:
                 ]
         dsets = Datasets(items, tfms, splits=splits)
 
+        dls = dsets.dataloaders(bs=batch_size)
+
         train_labels = [items[i][1] for i in splits[0]]
         class_counts = Counter(train_labels)
-        raw_weights = [1.0 / math.sqrt(class_counts[label]) for label in train_labels]
-        suma_wag = sum(raw_weights)
-        weights = [w / suma_wag for w in raw_weights]
-        dls = dsets.dataloaders(bs=batch_size, dl_type=WeightedDL, wgts=weights)
+        raw_weights = [1.0 / class_counts[c] for c in dls.vocab]
+        weight_tensor = torch.tensor(raw_weights, dtype=torch.float32)
+        weight_tensor /= weight_tensor.mean()
 
         model = xresnet18(c_in=1, n_out=len(dls.vocab), pretrained=False)
         if torch.cuda.device_count() > 1:
@@ -428,7 +429,8 @@ class Engine:
         all_cbs = base_cbs + user_cbs
 
         metrics = [accuracy, Precision(average='macro'), Recall(average='macro'), F1Score(average='macro')]
-        learn = Learner(dls, model, wd=wd, metrics=metrics, loss_func=LabelSmoothingCrossEntropy(eps=eps), cbs=all_cbs)
+        loss_func = LabelSmoothingCrossEntropy(weight=weight_tensor, eps=eps)
+        learn = Learner(dls, model, wd=wd, metrics=metrics, loss_func=loss_func, cbs=all_cbs)
         
         res = learn.lr_find(show_plot=False)
         base_lr = res.valley
