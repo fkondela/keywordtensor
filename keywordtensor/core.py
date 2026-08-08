@@ -416,7 +416,7 @@ class Engine:
         train_labels = [items[i][1] for i in splits[0]]
         class_counts = Counter(train_labels)
         raw_weights = [1.0 / class_counts[c] for c in dls.vocab]
-        weight_tensor = torch.tensor(raw_weights, dtype=torch.float32)
+        weight_tensor = torch.tensor(raw_weights, dtype=torch.float32, device=dls.device)
         weight_tensor /= weight_tensor.mean()
 
         model = xresnet18(c_in=1, n_out=len(dls.vocab), pretrained=False)
