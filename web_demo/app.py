@@ -414,6 +414,7 @@ with gr.Blocks(title="KeywordTensor") as demo:
     live_flag = gr.State(lambda: [False])
     
     with gr.Accordion("Step 1: Select Microphone", open=True) as mic_group:
+        gr.Markdown("*Your voice is processed entirely in real-time in memory. No audio data is ever saved, logged, or stored on our servers.*")
         audio_in = gr.Audio(sources=["microphone"], streaming=True, label="Audio Stream")
         btn_confirm = gr.Button("Next", variant="primary", interactive=False)
         
