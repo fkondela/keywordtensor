@@ -3,17 +3,17 @@
         "eight",
         "five",
         "four",
-        "other",
         "nine",
         "one",
+        "other",
         "seven",
         "six",
         "three",
         "two",
         "zero"
     ],
-    "mean": -30.220190173315622,
-    "std": 20.74719726612013,
+    "mean": -21.53386369413421,
+    "std": 20.441568137288492,
     "duration": 1.0,
     "sr": 16000
 }
