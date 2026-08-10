@@ -20,6 +20,8 @@ import soundfile as sf
 from huggingface_hub import HfApi
 from faker import Faker
 from keywordtensor.core import Engine
+from fastapi import FastAPI
+import uvicorn
 
 def speak_sync(text):
     try:
@@ -209,7 +211,8 @@ def admin_mode_quiz(password, state, live_flag):
     done_flag = [False]
 
     def get_other_prompt():
-        kind = next(state["other_cycle"])
+        kind = state["other_cycle"][state["other_cycle_idx"]]
+        state["other_cycle_idx"] = (state["other_cycle_idx"] + 1) % len(state["other_cycle"])
         if kind == "bg": state["current_word"] = "background"; return None
         if kind == "fn": state["current_word"] = fake.word().lower(); return state["current_word"]
         state["current_word"] = random.choice(CUSTOM_WORDS); return state["current_word"]
@@ -406,7 +409,8 @@ with gr.Blocks(title="KeywordTensor") as demo:
             "buffer": collections.deque(), 
             "duration": 1.0,
             "engine": Engine(),
-            "other_cycle": itertools.cycle(["bg", "fn", "bg", "hn"]),
+            "other_cycle": ["bg", "fn", "bg", "hn"],
+            "other_cycle_idx": 0,
             "current_word": ""
         }
 
@@ -522,10 +526,20 @@ with gr.Blocks(title="KeywordTensor") as demo:
     btn_stop_admin.click(lambda f, s: stop_and_return_menu(f, s, False), inputs=[live_flag, state], outputs=[menu_group_main, menu_group_quiz, soko_group, g2048_group, quiz_live_group, quiz_admin_group, quiz_game_group, soko_html, g2048_html, quiz_live_html, admin_html, quiz_game_html], js=cancel_js)
     btn_stop_quiz_game.click(lambda f, s: stop_and_return_menu(f, s, False), inputs=[live_flag, state], outputs=[menu_group_main, menu_group_quiz, soko_group, g2048_group, quiz_live_group, quiz_admin_group, quiz_game_group, soko_html, g2048_html, quiz_live_html, admin_html, quiz_game_html], js=cancel_js)
 
-if __name__ == "__main__":
-    base = os.path.dirname(__file__)
+# To musi być w głównym ciele skryptu, żeby Azure to zobaczył
+app = FastAPI()
 
-    favicon_path = os.path.join(base if os.path.exists(os.path.join(base, "assets")) else os.path.dirname(base), "assets", "logo.svg")
-    demo.launch(
-        server_name="0.0.0.0", server_port=8000, theme=gr.themes.Soft(primary_hue="blue"), css=custom_css, favicon_path=favicon_path
-    )
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+app = gr.mount_gradio_app(
+    app, 
+    demo, 
+    path="/",
+    theme=gr.themes.Soft(primary_hue="blue"),
+    css=custom_css
+)
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
