@@ -22,6 +22,8 @@ from faker import Faker
 from keywordtensor.core import Engine
 from fastapi import FastAPI
 import uvicorn
+import asyncio
+from contextlib import asynccontextmanager
 
 def speak_sync(text):
     try:
@@ -526,8 +528,27 @@ with gr.Blocks(title="KeywordTensor") as demo:
     btn_stop_admin.click(lambda f, s: stop_and_return_menu(f, s, False), inputs=[live_flag, state], outputs=[menu_group_main, menu_group_quiz, soko_group, g2048_group, quiz_live_group, quiz_admin_group, quiz_game_group, soko_html, g2048_html, quiz_live_html, admin_html, quiz_game_html], js=cancel_js)
     btn_stop_quiz_game.click(lambda f, s: stop_and_return_menu(f, s, False), inputs=[live_flag, state], outputs=[menu_group_main, menu_group_quiz, soko_group, g2048_group, quiz_live_group, quiz_admin_group, quiz_game_group, soko_html, g2048_html, quiz_live_html, admin_html, quiz_game_html], js=cancel_js)
 
-# To musi być w głównym ciele skryptu, żeby Azure to zobaczył
-app = FastAPI()
+def do_warmup():
+    try:
+        engine = Engine()
+        mock_source = (16000, collections.deque([0.0] * 16000, maxlen=16000))
+        engine.listen("spatial_nav", source=mock_source, listen_time=0, threads=1)
+        engine.listen("tak_nie", source=mock_source, listen_time=0, threads=1)
+    except Exception as e:
+        print(f"Warmup error: {e}")
+
+async def periodic_warmup():
+    while True:
+        await asyncio.get_event_loop().run_in_executor(None, do_warmup)
+        await asyncio.sleep(1800)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(periodic_warmup())
+    yield
+    task.cancel()
+
+app = FastAPI(lifespan=lifespan)
 
 @app.get("/health")
 def health_check():
