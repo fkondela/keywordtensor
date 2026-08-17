@@ -268,7 +268,7 @@ def admin_mode_quiz(password, state, live_flag):
             state["engine"].record(
                 target=save_and_upload, classes=["tak", "nie", "other"], samples=4,
                 actions={"tak": create_action("tak"), "nie": create_action("nie"), "other": create_action("other")},
-                source=(state["sr"], state["buffer"]), duration=1.0, threads=1, stop=lambda: not live_flag[0]
+                source=(state["sr"], state["buffer"]), duration=1.0, stop=lambda: not live_flag[0]
             )
         except Exception as e:
             current_status[0] = f"<h2>ERROR: {str(e)}</h2>"
@@ -356,16 +356,12 @@ def game_mode_quiz(state, live_flag):
             feedback = "<h2><span style='color:red'>Wrong!</span></h2>"
             text_to_speak = "Niestety, zła odpowiedź."
             
-        # 1. BŁYSKAWICZNA REAKCJA UI (Zatrzymanie timera i pokazanie wyniku bez czekania na audio)
         yield render_ui("0.0s", feedback_html=feedback), gr.update(visible=False), "", "stop"
         
-        # Wymuszamy oddanie kontroli (GIL release), aby serwer Gradio zdążył fizycznie wysłać powyższą klatkę przez sieć zanim zablokujemy go na 2 sekundy pobieraniem gTTS!
         time.sleep(0.05)
         
-        # 2. GENEROWANIE AUDIO W TLE (UI już się odświeżyło)
         b64_f, d = speak_sync(text_to_speak)
         
-        # 3. WYSŁANIE GOTOWEGO DŹWIĘKU
         yield render_ui("0.0s", feedback_html=feedback), gr.update(visible=False), b64_f, "stop"
         
         time_start_sleep = time.time()
