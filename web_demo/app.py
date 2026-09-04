@@ -201,7 +201,7 @@ def live_mode_quiz(state, live_flag):
 
 def admin_mode_quiz(password, state, live_flag):
     if password != os.environ.get("ADMIN_PASS", "dev123"):
-        yield "<h2>Invalid Password!</h2>", gr.update(visible=True)
+        yield "<h2>Invalid Password!</h2>", gr.update(visible=True), ""
         return
 
     live_flag[0] = True
@@ -210,6 +210,7 @@ def admin_mode_quiz(password, state, live_flag):
     if target_len: state["buffer"].extend([0.0] * target_len)
     
     current_status = ["<h2>Starting...</h2>"]
+    timer_signal = [""]
     done_flag = [False]
 
     def get_other_prompt():
@@ -230,14 +231,16 @@ def admin_mode_quiz(password, state, live_flag):
             for i in [3, 2, 1]:
                 if not live_flag[0]: return
                 current_status[0] = f"<h2>Recording <b>{word_display}</b> - get ready <span style='color:#3b82f6'>{i}</span>...</h2>"
-                time.sleep(1.0)
+                time.sleep(1.5)
 
             start_recording()
+            current_status[0] = f"<h2>Recording <b>{word_display}</b> (<span id='admin_qt' style='color:#f97316'>0.0s</span> / {total_time:.1f}s)</h2>"
+            timer_signal[0] = str(total_time)
             while current_time() < total_time:
                 if not live_flag[0]: return
-                current_status[0] = f"<h2>Recording <b>{word_display}</b> (<span style='color:#f97316'>{current_time():.1f}s</span> / {total_time:.1f}s)</h2>"
-                time.sleep(0.25)
+                time.sleep(0.1)
 
+            timer_signal[0] = "stop"
             current_status[0] = "<h2><span style='color:#22c55e'>Done, sending to server...</span></h2>"
         return action
 
@@ -277,14 +280,16 @@ def admin_mode_quiz(password, state, live_flag):
             
     threading.Thread(target=worker, daemon=True).start()
     
-    yield current_status[0], gr.update(visible=False)
+    yield current_status[0], gr.update(visible=False), ""
     last_yielded = current_status[0]
+    last_timer = timer_signal[0]
     while live_flag[0] and not done_flag[0]:
-        if current_status[0] != last_yielded:
+        if current_status[0] != last_yielded or timer_signal[0] != last_timer:
             last_yielded = current_status[0]
-            yield last_yielded, gr.update(visible=False)
-        time.sleep(0.25)
-    yield "<h2>Finished.</h2>", gr.update(visible=True)
+            last_timer = timer_signal[0]
+            yield last_yielded, gr.update(visible=False), last_timer
+        time.sleep(0.1)
+    yield "<h2>Finished.</h2>", gr.update(visible=True), "stop"
 
 def game_mode_quiz(state, live_flag):
     live_flag[0] = True
@@ -459,6 +464,7 @@ with gr.Blocks(title="KeywordTensor") as demo:
         admin_pass = gr.Textbox(label="Password", type="password")
         btn_start_admin = gr.Button("Start", variant="primary")
         admin_html = gr.HTML("<h2>Awaiting start...</h2>")
+        admin_timer_out = gr.Textbox(visible=False)
         
     with gr.Group(visible=False) as quiz_game_group:
         btn_stop_quiz_game = gr.Button("Back to Menu", variant="stop")
@@ -497,7 +503,7 @@ with gr.Blocks(title="KeywordTensor") as demo:
     g2048_out.change(None, inputs=[g2048_out], js=js_handler_2048)
 
     btn_start_quiz_live.click(live_mode_quiz, inputs=[state, live_flag], outputs=[quiz_live_html, btn_start_quiz_live], concurrency_limit=100)
-    btn_start_admin.click(admin_mode_quiz, inputs=[admin_pass, state, live_flag], outputs=[admin_html, btn_start_admin], concurrency_limit=100)
+    btn_start_admin.click(admin_mode_quiz, inputs=[admin_pass, state, live_flag], outputs=[admin_html, btn_start_admin, admin_timer_out], concurrency_limit=100)
     
     btn_start_quiz_game.click(game_mode_quiz, inputs=[state, live_flag], outputs=[quiz_game_html, btn_start_quiz_game, quiz_game_tts_out, quiz_game_timer_out], concurrency_limit=100, js="() => { let a=document.getElementById('ap')||document.createElement('audio'); a.id='ap'; a.style.display='none'; document.body.appendChild(a); a.src='data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjEyLjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIAD+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+AAAAAExhdmM1OC4xMzQAAAAAAAAAAAAAAAAkAEQAAAAAAAASIQAAAABJRU5E'; a.play().catch(()=>{}); return []; }")
     
@@ -506,6 +512,9 @@ with gr.Blocks(title="KeywordTensor") as demo:
     
     js_timer = "(d) => { clearInterval(window.qT); if(!d||d==='stop')return; let t=parseFloat(d), el=document.getElementById('qt'); window.qT=setInterval(()=>{t=Math.max(0,t-0.1); if(el)el.innerText=t.toFixed(1)+'s'; if(t<=0)clearInterval(window.qT)},100); }"
     quiz_game_timer_out.change(None, inputs=[quiz_game_timer_out], js=js_timer)
+
+    js_admin_timer = "(d) => { clearInterval(window.aT); if(!d||d==='stop')return; let t=0.0, total=parseFloat(d); window.aT=setInterval(()=>{t=Math.min(total,t+0.1); let el=document.getElementById('admin_qt'); if(el)el.innerText=t.toFixed(1)+'s'; if(t>=total)clearInterval(window.aT)},100); }"
+    admin_timer_out.change(None, inputs=[admin_timer_out], js=js_admin_timer)
 
     def stop_and_return_menu(flag, state_dict, to_main):
         flag[0] = False
@@ -516,7 +525,7 @@ with gr.Blocks(title="KeywordTensor") as demo:
             gr.update(value="<h2>Awaiting start...</h2>"), gr.update(value="<h2>Awaiting start...</h2>"), gr.update(value="<h2>Awaiting start...</h2>"), gr.update(value="<h2>Awaiting start...</h2>"), gr.update(value="<h2>Awaiting start...</h2>")
         )
 
-    cancel_js = "(f, s) => { let a=document.getElementById('ap'); if(a) a.pause(); clearInterval(window.qT); return [f, s]; }"
+    cancel_js = "(f, s) => { let a=document.getElementById('ap'); if(a) a.pause(); clearInterval(window.qT); clearInterval(window.aT); return [f, s]; }"
 
     btn_stop_soko.click(lambda f, s: stop_and_return_menu(f, s, True), inputs=[live_flag, state], outputs=[menu_group_main, menu_group_quiz, soko_group, g2048_group, quiz_live_group, quiz_admin_group, quiz_game_group, soko_html, g2048_html, quiz_live_html, admin_html, quiz_game_html], js=cancel_js)
     btn_stop_2048.click(lambda f, s: stop_and_return_menu(f, s, True), inputs=[live_flag, state], outputs=[menu_group_main, menu_group_quiz, soko_group, g2048_group, quiz_live_group, quiz_admin_group, quiz_game_group, soko_html, g2048_html, quiz_live_html, admin_html, quiz_game_html], js=cancel_js)
