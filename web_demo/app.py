@@ -202,7 +202,7 @@ def live_mode_quiz(state, live_flag):
 
 def admin_mode_quiz(password, state, live_flag):
     if password != os.environ.get("ADMIN_PASS", "dev123"):
-        yield "<h2>Invalid Password!</h2>", gr.update(visible=True), ""
+        yield "<h2>Invalid Password!</h2>", gr.update(visible=True), "", gr.update(visible=False)
         return
 
     live_flag[0] = True
