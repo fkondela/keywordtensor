@@ -243,7 +243,8 @@ def admin_mode_quiz(password, state, live_flag):
                 time.sleep(0.1)
 
             timer_signal[0] = "stop"
-            current_status[0] = "<h2><span style='color:#22c55e'>Done, sending to server...</span></h2>"
+            current_status[0] = "<h2><span style='color:#f59e0b'>Processing audio...</span></h2>"
+            time.sleep(0.8)
         return action
 
     def save_and_upload(cls_name, idx, audio_np, sr):
