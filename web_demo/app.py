@@ -81,6 +81,7 @@ custom_css = """
 .header-container h1 { margin: 0; color: #3b82f6 !important; font-weight: bold !important; font-size: 2.2em; }
 footer { display: none !important; }
 button[aria-label="Settings"] { display: none !important; }
+#admin_html_elem, #admin_html_elem * { pointer-events: auto !important; opacity: 1 !important; filter: none !important; }
 """
 
 def handle_audio_stream(chunk, state):
@@ -212,6 +213,7 @@ def admin_mode_quiz(password, state, live_flag):
     current_status = ["<h2>Starting...</h2>"]
     timer_signal = [""]
     done_flag = [False]
+    show_review_btns = [False]
 
     def get_other_prompt():
         kind = state["other_cycle"][state["other_cycle_idx"]]
@@ -247,6 +249,34 @@ def admin_mode_quiz(password, state, live_flag):
     def save_and_upload(cls_name, idx, audio_np, sr):
         if not live_flag[0]: return
         label = state["current_word"] if cls_name == "other" else cls_name
+        
+        import io
+        import base64
+        fp = io.BytesIO()
+        sf.write(fp, audio_np.squeeze(), sr, format='WAV')
+        fp.seek(0)
+        b64_audio = base64.b64encode(fp.read()).decode('utf-8')
+        
+        state["review_signal"] = "ready"
+        current_status[0] = f"""<div style='text-align:center; padding:10px;'>
+<h2>Review: <b>{label.upper()}</b></h2>
+<audio controls src='data:audio/wav;base64,{b64_audio}' style='margin:10px auto; display:block;' autoplay></audio>
+<p style='color:#64748b; margin:8px 0;'>Is the recording good?</p>
+</div>"""
+        show_review_btns[0] = True
+
+        while state["review_signal"] == "ready" and live_flag[0]:
+            time.sleep(0.1)
+            
+        show_review_btns[0] = False
+            
+        if state["review_signal"].startswith("retry"):
+            state["review_signal"] = ""
+            return "retry"
+            
+        state["review_signal"] = ""
+        current_status[0] = "<h2><span style='color:#22c55e'>Done, sending to server...</span></h2>"
+        
         filename = f"{label}_{int(time.time())}_{random.randint(1000, 9999)}_{idx}.wav"
         tmp = f"/tmp/{filename}"
         sf.write(tmp, audio_np.squeeze(), sr)
@@ -280,16 +310,18 @@ def admin_mode_quiz(password, state, live_flag):
             
     threading.Thread(target=worker, daemon=True).start()
     
-    yield current_status[0], gr.update(visible=False), ""
+    yield current_status[0], gr.update(visible=False), "", gr.update(visible=False)
     last_yielded = current_status[0]
     last_timer = timer_signal[0]
+    last_btns = show_review_btns[0]
     while live_flag[0] and not done_flag[0]:
-        if current_status[0] != last_yielded or timer_signal[0] != last_timer:
+        if current_status[0] != last_yielded or timer_signal[0] != last_timer or show_review_btns[0] != last_btns:
             last_yielded = current_status[0]
             last_timer = timer_signal[0]
-            yield last_yielded, gr.update(visible=False), last_timer
+            last_btns = show_review_btns[0]
+            yield last_yielded, gr.update(visible=False), last_timer, gr.update(visible=last_btns)
         time.sleep(0.1)
-    yield "<h2>Finished.</h2>", gr.update(visible=True), "stop"
+    yield "<h2>Finished.</h2>", gr.update(visible=True), "stop", gr.update(visible=False)
 
 def game_mode_quiz(state, live_flag):
     live_flag[0] = True
@@ -414,7 +446,8 @@ with gr.Blocks(title="KeywordTensor") as demo:
             "engine": Engine(),
             "other_cycle": ["bg", "fn", "bg", "hn"],
             "other_cycle_idx": 0,
-            "current_word": ""
+            "current_word": "",
+            "review_signal": ""
         }
 
     state = gr.State(init_user_state)
@@ -463,7 +496,10 @@ with gr.Blocks(title="KeywordTensor") as demo:
         btn_stop_admin = gr.Button("Back to Menu", variant="stop")
         admin_pass = gr.Textbox(label="Password", type="password")
         btn_start_admin = gr.Button("Start", variant="primary")
-        admin_html = gr.HTML("<h2>Awaiting start...</h2>")
+        admin_html = gr.HTML("<h2>Awaiting start...</h2>", elem_id="admin_html_elem")
+        with gr.Row(visible=False) as admin_review_btns:
+            btn_admin_retry = gr.Button("🔴 Retry", variant="stop")
+            btn_admin_send = gr.Button("🟢 Send", variant="primary")
         admin_timer_out = gr.Textbox(visible=False)
         
     with gr.Group(visible=False) as quiz_game_group:
@@ -503,7 +539,7 @@ with gr.Blocks(title="KeywordTensor") as demo:
     g2048_out.change(None, inputs=[g2048_out], js=js_handler_2048)
 
     btn_start_quiz_live.click(live_mode_quiz, inputs=[state, live_flag], outputs=[quiz_live_html, btn_start_quiz_live], concurrency_limit=100)
-    btn_start_admin.click(admin_mode_quiz, inputs=[admin_pass, state, live_flag], outputs=[admin_html, btn_start_admin, admin_timer_out], concurrency_limit=100)
+    btn_start_admin.click(admin_mode_quiz, inputs=[admin_pass, state, live_flag], outputs=[admin_html, btn_start_admin, admin_timer_out, admin_review_btns], concurrency_limit=100)
     
     btn_start_quiz_game.click(game_mode_quiz, inputs=[state, live_flag], outputs=[quiz_game_html, btn_start_quiz_game, quiz_game_tts_out, quiz_game_timer_out], concurrency_limit=100, js="() => { let a=document.getElementById('ap')||document.createElement('audio'); a.id='ap'; a.style.display='none'; document.body.appendChild(a); a.src='data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjEyLjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIAD+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+AAAAAExhdmM1OC4xMzQAAAAAAAAAAAAAAAAkAEQAAAAAAAASIQAAAABJRU5E'; a.play().catch(()=>{}); return []; }")
     
@@ -515,6 +551,9 @@ with gr.Blocks(title="KeywordTensor") as demo:
 
     js_admin_timer = "(d) => { clearInterval(window.aT); if(!d||d==='stop')return; let t=0.0, total=parseFloat(d); window.aT=setInterval(()=>{t=Math.min(total,t+0.1); let el=document.getElementById('admin_qt'); if(el)el.innerText=t.toFixed(1)+'s'; if(t>=total)clearInterval(window.aT)},100); }"
     admin_timer_out.change(None, inputs=[admin_timer_out], js=js_admin_timer)
+
+    btn_admin_retry.click(lambda s: s.update({"review_signal": "retry"}), inputs=[state], outputs=[])
+    btn_admin_send.click(lambda s: s.update({"review_signal": "send"}), inputs=[state], outputs=[])
 
     def stop_and_return_menu(flag, state_dict, to_main):
         flag[0] = False

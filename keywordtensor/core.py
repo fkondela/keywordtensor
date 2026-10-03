@@ -621,63 +621,69 @@ class Engine:
         for i in range(samples):
             for cls in classes:
 
-                if stop is not None and stop(): return
+                success = False
+                while not success:
+                    if stop is not None and stop(): return
 
-                bufor_audio = None 
-                start_time = None  
-                def record_in_background():
-                    nonlocal bufor_audio
-                    if isinstance(source, str) and source.startswith("microphone"):
-                        bufor_audio = sd.rec(length_in_samples, samplerate=sr, channels=1, dtype='float32',device=device_id)
-                        sd.wait() 
+                    bufor_audio = None 
+                    start_time = None  
+                    def record_in_background():
+                        nonlocal bufor_audio
+                        if isinstance(source, str) and source.startswith("microphone"):
+                            bufor_audio = sd.rec(length_in_samples, samplerate=sr, channels=1, dtype='float32',device=device_id)
+                            sd.wait() 
+                        else:
+                            time.sleep(duration)
+                            bufor_audio = source
+
+                    t = threading.Thread(target=record_in_background)
+
+                    def start_recording():
+                        nonlocal start_time
+                        start_time = time.time()
+                        t.start()
+                        
+
+                    def current_time():
+                        if start_time is None: return 0.0
+                        return time.time() - start_time
+
+                    if cls in actions:
+                        actions[cls](start_recording=start_recording, current_time=current_time, total_time=duration)
                     else:
-                        time.sleep(duration)
-                        bufor_audio = source
-
-                t = threading.Thread(target=record_in_background)
-
-                def start_recording():
-                    nonlocal start_time
-                    start_time = time.time()
-                    t.start()
-                    
-
-                def current_time():
-                    if start_time is None: return 0.0
-                    return time.time() - start_time
-
-                if cls in actions:
-                    actions[cls](start_recording=start_recording, current_time=current_time, total_time=duration)
-                else:
-                    for countdown in [3, 2, 1]:
-                        print(f"\rRecording sample {i} for [{cls.upper()}] in {countdown}...", end="", flush=True)
-                        time.sleep(1)
+                        for countdown in [3, 2, 1]:
+                            print(f"\rRecording sample {i} for [{cls.upper()}] in {countdown}...", end="", flush=True)
+                            time.sleep(1)
+                            
+                        start_recording()
                         
-                    start_recording()
-                    
-                    while current_time() < duration:
-                        print(f"\rRecording sample {i} for [{cls.upper()}] ({current_time():.1f}s / {duration:.1f}s)", end="", flush=True)
-                        time.sleep(0.1)
-                        
-                    print(f"\rRecording sample {i} for [{cls.upper()}] ({duration:.1f}s / {duration:.1f}s) - DONE!          ")             
-                t.join()
+                        while current_time() < duration:
+                            print(f"\rRecording sample {i} for [{cls.upper()}] ({current_time():.1f}s / {duration:.1f}s)", end="", flush=True)
+                            time.sleep(0.1)
+                            
+                        print(f"\rRecording sample {i} for [{cls.upper()}] ({duration:.1f}s / {duration:.1f}s) - DONE!          ")             
+                    t.join()
 
-                if isinstance(bufor_audio, tuple):
-                    original_sr, audio_data = bufor_audio
-                    audio_np = np.array(audio_data, dtype=np.float32).squeeze()
-                    if original_sr != sr:
-                        audio_np = librosa.resample(audio_np, orig_sr=original_sr, target_sr=sr)
-                else:
-                    audio_np = np.array(bufor_audio, dtype=np.float32).squeeze()
+                    if isinstance(bufor_audio, tuple):
+                        original_sr, audio_data = bufor_audio
+                        audio_np = np.array(audio_data, dtype=np.float32).squeeze()
+                        if original_sr != sr:
+                            audio_np = librosa.resample(audio_np, orig_sr=original_sr, target_sr=sr)
+                    else:
+                        audio_np = np.array(bufor_audio, dtype=np.float32).squeeze()
 
-                if isinstance(target, str):
-                    folder_path = os.path.join(target, cls)
-                    os.makedirs(folder_path, exist_ok=True)
-                    save_path = os.path.join(target, cls, f"{i}_{uuid.uuid4().hex[:6]}.wav")
-                    sf.write(save_path, audio_np, sr)
-
-                else:
-                    target(cls, i, audio_np, sr)
+                    if isinstance(target, str):
+                        folder_path = os.path.join(target, cls)
+                        os.makedirs(folder_path, exist_ok=True)
+                        save_path = os.path.join(target, cls, f"{i}_{uuid.uuid4().hex[:6]}.wav")
+                        sf.write(save_path, audio_np, sr)
+                        success = True
+                    else:
+                        result = target(cls, i, audio_np, sr)
+                        if result == "retry":
+                            success = False
+                        else:
+                            success = True
                 
 
 

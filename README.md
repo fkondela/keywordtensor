@@ -100,7 +100,7 @@ model.record(
 
 **Record parameters:**
 Available parameters in `.record()`:
-- `target` *(required)*: Path where the audio folders will be saved.
+- `target` *(required)*: Path where the audio folders will be saved. Alternatively, you can pass a custom callback function. If your function returns `"retry"`, the engine will automatically repeat the recording for that specific sample.
 - `classes` *(required)*: List of strings (or a single string). Words you want to record.
 - `samples` *(default: 100)*: Number of audio samples to record per class.
 - `duration` *(default: 1.0)*: The exact duration of each audio clip in seconds.
